@@ -3,6 +3,8 @@ export {
   FIXTURE_T1,
   FIXTURE_T2,
   FIXTURE_T3,
+  FIXTURE_SI_TOKEN_A,
+  FIXTURE_SI_TOKEN_B,
   TenantA,
   TenantB,
   MOCK_CUSTOMER_A,

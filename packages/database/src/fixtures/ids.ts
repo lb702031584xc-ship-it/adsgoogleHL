@@ -59,6 +59,12 @@ export const TenantA = {
   auditSync: "88888888-8888-4888-8888-888888888806",
   /** @deprecated Phase 1.1 single audit id — kept as alias of auditTenant for compatibility */
   auditLegacy: "88888888-8888-4888-8888-888888888888",
+  /** Phase 13.4 Track B — Script Integration chain (Tenant A) */
+  scriptIntegration: "a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1",
+  scriptSyncTarget: "a2a2a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2",
+  scriptSyncLog: "a3a3a3a3-a3a3-43a3-83a3-a3a3a3a3a3a3",
+  /** Phase 13.4 Track B — tracking_link_offers (trk_demo_001 ↔ offerA) */
+  trackingLinkOffer: "a4a4a4a4-a4a4-44a4-84a4-a4a4a4a4a4a4",
 } as const;
 
 /** Tenant B — isolation partner */
@@ -79,6 +85,24 @@ export const TenantB = {
   urlAdV1: "66666666-6666-4666-8666-666666666610",
   job: "77777777-7777-4777-8777-777777777710",
   audit: "88888888-8888-4888-8888-888888888810",
+  /** Phase 13.4 Track B — Script Integration chain (Tenant B) */
+  scriptIntegration: "b1b1b1b1-b1b1-41b1-81b1-b1b1b1b1b1b1",
+  scriptSyncTarget: "b2b2b2b2-b2b2-42b2-82b2-b2b2b2b2b2b2",
+  /** Phase 13.4 Track B — tracking_link_offers (Tenant B tracking ↔ offer) */
+  trackingLinkOffer: "b4b4b4b4-b4b4-44b4-84b4-b4b4b4b4b4b4",
+} as const;
+
+/** Deterministic synthetic token material — never plaintext live tokens */
+export const FIXTURE_SI_TOKEN_A = {
+  tokenKeyId: "tok_key_fixture_si_a",
+  tokenPrefix: "alk_s_fix_a",
+  tokenHash: "lab_fixture_token_hash_si_a_v1_deterministic_0001",
+} as const;
+
+export const FIXTURE_SI_TOKEN_B = {
+  tokenKeyId: "tok_key_fixture_si_b",
+  tokenPrefix: "alk_s_fix_b",
+  tokenHash: "lab_fixture_token_hash_si_b_v1_deterministic_0002",
 } as const;
 
 export const MOCK_CUSTOMER_A = "mock-customer-001";
