@@ -41,6 +41,10 @@ const ENV = {
   ADLINKLAB_INTEGRATION_TOKEN: "alk_s_test_token_for_unit_tests_only",
 } as unknown as NodeJS.ProcessEnv;
 
+const mockSessionHeaders = async () => ({
+  Cookie: "alk_session=test-session",
+});
+
 function asFetch(
   impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 ): typeof fetch {
@@ -149,18 +153,18 @@ describe("Phase 8.4.7.2 Dashboard frontend", () => {
   });
 
   describe("API client", () => {
-    it("calls summary endpoint with GET + Bearer", async () => {
+    it("calls summary endpoint with GET + session cookie", async () => {
       const fetchImpl = asFetch(async (url, init) => {
         expect(String(url)).toBe(
           "https://api.example.test/api/v1/dashboard/summary"
         );
         expect(init?.method).toBe("GET");
         expect(init?.headers).toMatchObject({
-          Authorization: "Bearer alk_s_test_token_for_unit_tests_only",
+          Cookie: "alk_session=test-session",
         });
         return jsonResponse(sampleSummary);
       });
-      const data = await dashboardApi.getSummary({ env: ENV, fetchImpl });
+      const data = await dashboardApi.getSummary({ env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders });
       expect(data.integration.integrationId).toBe("int-1");
     });
 
@@ -168,7 +172,7 @@ describe("Phase 8.4.7.2 Dashboard frontend", () => {
       const fetchImpl = vi.fn(
         asFetch(async () => jsonResponse({ items: [] }))
       );
-      await dashboardApi.getIntegrations({ env: ENV, fetchImpl });
+      await dashboardApi.getIntegrations({ env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders });
       expect(firstUrl(fetchImpl)).toContain("/api/v1/dashboard/integrations");
     });
 
@@ -194,7 +198,7 @@ describe("Phase 8.4.7.2 Dashboard frontend", () => {
           })
         )
       );
-      await dashboardApi.getIntegration("int-1", { env: ENV, fetchImpl });
+      await dashboardApi.getIntegration("int-1", { env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders });
       expect(firstUrl(fetchImpl)).toContain(
         "/api/v1/dashboard/integrations/int-1"
       );
@@ -207,6 +211,7 @@ describe("Phase 8.4.7.2 Dashboard frontend", () => {
       const res = await dashboardApi.getTargets("int-1", {
         env: ENV,
         fetchImpl,
+        sessionHeadersImpl: mockSessionHeaders,
       });
       expect(res.items[0]?.desiredVersion).toBe(2);
     });
@@ -226,7 +231,7 @@ describe("Phase 8.4.7.2 Dashboard frontend", () => {
       const res = await dashboardApi.getLogs(
         "int-1",
         { page: 2, pageSize: 20 },
-        { env: ENV, fetchImpl }
+        { env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders }
       );
       expect(res.hasNext).toBe(false);
       expect(res.page).toBe(2);
@@ -246,28 +251,28 @@ describe("Phase 8.4.7.2 Dashboard frontend", () => {
       await dashboardApi.getLogs(
         "int-1",
         { page: 1, pageSize: 500 },
-        { env: ENV, fetchImpl }
+        { env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders }
       );
     });
 
     it("maps 401", async () => {
       const fetchImpl = asFetch(async () => jsonResponse({}, 401));
       await expect(
-        dashboardApi.getSummary({ env: ENV, fetchImpl })
+        dashboardApi.getSummary({ env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders })
       ).rejects.toMatchObject({ status: 401 });
     });
 
     it("maps 403", async () => {
       const fetchImpl = asFetch(async () => jsonResponse({}, 403));
       await expect(
-        dashboardApi.getSummary({ env: ENV, fetchImpl })
+        dashboardApi.getSummary({ env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders })
       ).rejects.toMatchObject({ status: 403 });
     });
 
     it("maps 500", async () => {
       const fetchImpl = asFetch(async () => jsonResponse({}, 500));
       await expect(
-        dashboardApi.getSummary({ env: ENV, fetchImpl })
+        dashboardApi.getSummary({ env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders })
       ).rejects.toMatchObject({ status: 500 });
     });
 
@@ -289,11 +294,11 @@ describe("Phase 8.4.7.2 Dashboard frontend", () => {
           counts: { targets: 0, synced: 0, outOfSync: 0, neverApplied: 0 },
         });
       });
-      await dashboardApi.getSummary({ env: ENV, fetchImpl });
-      await dashboardApi.getIntegrations({ env: ENV, fetchImpl });
-      await dashboardApi.getIntegration("int-1", { env: ENV, fetchImpl });
-      await dashboardApi.getTargets("int-1", { env: ENV, fetchImpl });
-      await dashboardApi.getLogs("int-1", { page: 1 }, { env: ENV, fetchImpl });
+      await dashboardApi.getSummary({ env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders });
+      await dashboardApi.getIntegrations({ env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders });
+      await dashboardApi.getIntegration("int-1", { env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders });
+      await dashboardApi.getTargets("int-1", { env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders });
+      await dashboardApi.getLogs("int-1", { page: 1 }, { env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders });
       expect(methods.every((m) => m === "GET")).toBe(true);
       expect(methods).toHaveLength(5);
     });
@@ -559,7 +564,7 @@ describe("Phase 8.4.7.2 Dashboard frontend", () => {
         expect(String(url)).not.toContain("alk_s_");
         return jsonResponse(sampleSummary);
       });
-      await dashboardApi.getSummary({ env: ENV, fetchImpl });
+      await dashboardApi.getSummary({ env: ENV, fetchImpl, sessionHeadersImpl: mockSessionHeaders });
     });
 
     it("does not write token to localStorage or sessionStorage APIs", () => {

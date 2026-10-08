@@ -61,7 +61,7 @@ Actors:
 | `packages/shared` | Errors, idempotency | Cross-cutting primitives |
 | Postgres | 16 | System of record |
 | Redis | 7 | BullMQ broker |
-| Traefik | v3 | Reverse proxy (**lab**: insecure dashboard on loopback; no TLS redesign yet) |
+| Traefik | v3 | Reverse proxy (**lab**: insecure dashboard on loopback; **deploy.sh**: `:80`+`:443` with Let's Encrypt ACME) |
 | Compose `migrate` | one-shot | `prisma migrate deploy` before api/worker |
 | Compose `worker` | `node dist/worker.js` | BullMQ `WorkerRuntime` (`urlChange` + `conversionUpload` only) |
 
@@ -701,7 +701,7 @@ web (Next.js)
 
 | Service | Role |
 |---------|------|
-| `traefik` | Reverse proxy; **lab**: `--api.insecure=true`, no TLS redesign |
+| `traefik` | Reverse proxy; **lab**: `--api.insecure=true`, HTTP `:80`; **deploy.sh**: +`:443`, Let's Encrypt ACME, HTTP→HTTPS redirect |
 | `postgres` | Persistence |
 | `redis` | BullMQ broker |
 | `migrate` | One-shot; api/worker wait for `service_completed_successfully` |
@@ -749,7 +749,7 @@ Operational runbook: [operations.md](./operations.md).
 | Planned queues without Workers | **PLANNED** — not production-capable |
 | Live Google Ads mutation | **DEFERRED-BY-DESIGN** |
 | Cookie / session SSO | **NOT IMPLEMENTED** |
-| Traefik TLS / HTTPS / ACME / :443 | **LAB-ONLY** / deferred (`:80` only; dashboard off by default) |
+| Traefik TLS / HTTPS / ACME / :443 | Implemented for production deploy via `deploy.sh` (Let's Encrypt HTTP-01, `DOMAIN`/`ACME_EMAIL`); lab `docker compose up` without them stays HTTP `:80` |
 | Web browser E2E | Gap |
 | Offsite / object-storage DR | **NOT IMPLEMENTED** |
 | Production restore drill | **NOT PROVEN** (lab only) |

@@ -1,6 +1,9 @@
 FROM node:20-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 WORKDIR /app
+# Prisma engine binaries: binaries.prisma.sh is often unreachable from CN/HK hosts;
+# use the npmmirror binary mirror instead (honored by `prisma generate`).
+ENV PRISMA_BINARIES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
 
 FROM base AS deps
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* .npmrc ./

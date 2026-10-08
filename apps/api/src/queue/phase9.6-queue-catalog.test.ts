@@ -35,8 +35,22 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
 
   it("2. worker registry lists every real Worker", () => {
     expect(WORKER_REGISTRY.map((w) => w.queueName).sort()).toEqual([
+      "budgetPacer",
+      "cashbackLpScore",
+      "cashbackRateCompare",
+      "cashbackRateWatch",
+      "cashbackRedirectCheck",
+      "cashbackTermsWatch",
+      "competitorWatch",
       "conversionUpload",
+      "deadLink",
+      "killSwitch",
+      "networkPull",
+      "payoutWatch",
+      "rotation",
+      "trafficMonitor",
       "urlChange",
+      "weeklyReport",
     ]);
     for (const w of WORKER_REGISTRY) {
       expect(w.entryPoint).toBe("WorkerRuntime.start");
@@ -45,7 +59,24 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
   });
 
   it("3. Queue + Worker + Processor => IMPLEMENTED", () => {
-    for (const name of ["urlChange", "conversionUpload"] as const) {
+    for (const name of [
+      "urlChange",
+      "conversionUpload",
+      "trafficMonitor",
+      "killSwitch",
+      "competitorWatch",
+      "rotation",
+      "deadLink",
+      "payoutWatch",
+      "budgetPacer",
+      "networkPull",
+      "weeklyReport",
+      "cashbackRateWatch",
+      "cashbackTermsWatch",
+      "cashbackLpScore",
+      "cashbackRedirectCheck",
+      "cashbackRateCompare",
+    ] as const) {
       expect(isWorkerRegistered(name)).toBe(true);
       expect(resolveQueueCapability(name)).toBe("IMPLEMENTED");
       const entry = getQueueCatalog().find((c) => c.queueName === name)!;
@@ -55,8 +86,22 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
       expect(entry.entryPoint).toBe("WorkerRuntime.start");
     }
     expect(getImplementedQueueNames().sort()).toEqual([
+      "budgetPacer",
+      "cashbackLpScore",
+      "cashbackRateCompare",
+      "cashbackRateWatch",
+      "cashbackRedirectCheck",
+      "cashbackTermsWatch",
+      "competitorWatch",
       "conversionUpload",
+      "deadLink",
+      "killSwitch",
+      "networkPull",
+      "payoutWatch",
+      "rotation",
+      "trafficMonitor",
       "urlChange",
+      "weeklyReport",
     ]);
   });
 
@@ -96,8 +141,33 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
   it("6. production WorkerRuntime registers only IMPLEMENTED queues", () => {
     const runtimeSrc = readRepo("apps/api/src/queue/runtime.ts");
     expect(runtimeSrc).toMatch(/new Worker[\s\S]*QUEUE_NAMES\.urlChange/);
+    expect(runtimeSrc).toMatch(/new Worker[\s\S]*QUEUE_NAMES\.conversionUpload/);
     expect(runtimeSrc).toMatch(
-      /new Worker[\s\S]*QUEUE_NAMES\.conversionUpload/
+      /new Worker[\s\S]*QUEUE_NAMES\.trafficMonitor/
+    );
+    expect(runtimeSrc).toMatch(
+      /new Worker[\s\S]*QUEUE_NAMES\.killSwitch/
+    );
+    expect(runtimeSrc).toMatch(
+      /new Worker[\s\S]*QUEUE_NAMES\.competitorWatch/
+    );
+    expect(runtimeSrc).toMatch(
+      /new Worker[\s\S]*QUEUE_NAMES\.weeklyReport/
+    );
+    expect(runtimeSrc).toMatch(
+      /new Worker[\s\S]*QUEUE_NAMES\.cashbackRateWatch/
+    );
+    expect(runtimeSrc).toMatch(
+      /new Worker[\s\S]*QUEUE_NAMES\.cashbackTermsWatch/
+    );
+    expect(runtimeSrc).toMatch(
+      /new Worker[\s\S]*QUEUE_NAMES\.cashbackLpScore/
+    );
+    expect(runtimeSrc).toMatch(
+      /new Worker[\s\S]*QUEUE_NAMES\.cashbackRedirectCheck/
+    );
+    expect(runtimeSrc).toMatch(
+      /new Worker[\s\S]*QUEUE_NAMES\.cashbackRateCompare/
     );
     expect(runtimeSrc).not.toMatch(
       /new Worker[\s\S]*QUEUE_NAMES\.googleAdsSync/
@@ -135,6 +205,20 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
       conversionUpload: "conversionUpload",
       clickProcessing: "clickProcessing",
       analyticsAggregation: "analyticsAggregation",
+      trafficMonitor: "trafficMonitor",
+      killSwitch: "killSwitch",
+      competitorWatch: "competitorWatch",
+      rotation: "rotation",
+      deadLink: "deadLink",
+      payoutWatch: "payoutWatch",
+      budgetPacer: "budgetPacer",
+      networkPull: "networkPull",
+      weeklyReport: "weeklyReport",
+      cashbackRateWatch: "cashbackRateWatch",
+      cashbackTermsWatch: "cashbackTermsWatch",
+      cashbackLpScore: "cashbackLpScore",
+      cashbackRedirectCheck: "cashbackRedirectCheck",
+      cashbackRateCompare: "cashbackRateCompare",
     });
   });
 
@@ -146,6 +230,18 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
     expect(src).toMatch(
       /export function createQueues[\s\S]*conversionUpload: new Queue/
     );
+    expect(src).toMatch(
+      /export function createQueues[\s\S]*trafficMonitor: new Queue/
+    );
+    expect(src).toMatch(
+      /export function createQueues[\s\S]*killSwitch: new Queue/
+    );
+    expect(src).toMatch(
+      /export function createQueues[\s\S]*competitorWatch: new Queue/
+    );
+    expect(src).toMatch(
+      /export function createQueues[\s\S]*rotation: new Queue/
+    );
     // Must not instantiate BullMQ clients for PLANNED queues
     const fnBody = src.slice(src.indexOf("export function createQueues"));
     const end = fnBody.indexOf("export async function processIdempotentJob");
@@ -154,8 +250,22 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
     expect(body).not.toMatch(/clickProcessing: new Queue/);
     expect(body).not.toMatch(/analyticsAggregation: new Queue/);
     expect(getImplementedQueueNames().sort()).toEqual([
+      "budgetPacer",
+      "cashbackLpScore",
+      "cashbackRateCompare",
+      "cashbackRateWatch",
+      "cashbackRedirectCheck",
+      "cashbackTermsWatch",
+      "competitorWatch",
       "conversionUpload",
+      "deadLink",
+      "killSwitch",
+      "networkPull",
+      "payoutWatch",
+      "rotation",
+      "trafficMonitor",
       "urlChange",
+      "weeklyReport",
     ]);
   });
 
@@ -201,6 +311,6 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
 
 describe("Phase 9.6 health route import smoke", () => {
   it("getQueueCatalog is importable without Redis", () => {
-    expect(getQueueCatalog().length).toBe(5);
+    expect(getQueueCatalog().length).toBe(19);
   });
 });

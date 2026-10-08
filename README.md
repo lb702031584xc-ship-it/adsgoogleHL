@@ -31,7 +31,7 @@ Research SaaS for Google Ads API integration study, tracking links, GCLID/UTM at
 | Observability | `/health` (`phase: "10"` stamp), `/health/live`, `/health/ready`, `/metrics` |
 | Backup / restore | `backup:create\|verify\|restore-test\|cleanup` + **LAB_CI_ONLY** `backup:depth-gate` (Phase 12 + 13.2-CI) |
 | Phase 10 hardening | `CORS_ORIGINS` fail-closed; in-process rate limits; Traefik dashboard switch; API → `/health/ready`; worker health = `dist/worker.js` artifact |
-| Traefik / TLS | HTTP `:80` only — TLS/HTTPS/ACME **not** implemented |
+| Traefik / TLS | `:80` + `:443`; Let's Encrypt ACME (HTTP-01) via `deploy.sh` (`DOMAIN`/`ACME_EMAIL`); HTTP→HTTPS redirect |
 | Seeded restore depth | Phase 12 lab + Phase 13.2-CI GitHub Actions D1–D11 **PASS**; Script Integration / `tracking_link_offers` fixtures **not** covered |
 | Controlled CI | `.github/workflows/seeded-restore-depth-gate.yml` — **`workflow_dispatch` only** (not scheduled/push) |
 | Not claimed | Production restore, offsite DR, scheduled/push CI, browser E2E |
@@ -45,7 +45,7 @@ Canonical docs: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) · [docs/operatio
 - **Worker:** same API image; `node dist/worker.js` + BullMQ
 - **Data:** PostgreSQL + Prisma
 - **Queue:** Redis + BullMQ
-- Infra: Docker Compose + Traefik (lab dashboard off by default; `TRAEFIK_DASHBOARD=true` for loopback; no TLS redesign yet)
+- Infra: Docker Compose + Traefik (lab dashboard off by default; `TRAEFIK_DASHBOARD=true` for loopback; TLS via Let's Encrypt when `DOMAIN`/`ACME_EMAIL` are set — see `deploy.sh`)
 - **Test:** Vitest (+ Fastify inject; PG/Redis opt-in)
 
 ## Monorepo

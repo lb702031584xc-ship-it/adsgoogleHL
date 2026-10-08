@@ -46,6 +46,11 @@ import {
   ClickIngestionService,
   TrackingLinkManagementService,
 } from "./services/click-ingestion.js";
+import {
+  InMemoryTrafficEventStore,
+  PrismaTrafficEventStore,
+  TrafficEventService,
+} from "./services/traffic-events.js";
 import { GoogleAdsSyncService } from "./services/google-ads-sync.js";
 import { ScriptConfigService } from "./services/script-config-service.js";
 import { ScriptSyncResultService } from "./services/script-sync-result-service.js";
@@ -89,6 +94,12 @@ export function createServices(
   const provider = createGoogleAdsProvider(googleAdsKind);
   const traffic = createTrafficProvider(trafficKind, repos.clicks);
   const audit = new AuditService(repos.auditLogs);
+  // Phase 2 — traffic event journal (Prisma in production, in-memory otherwise).
+  // Best-effort: event write failures are logged, never thrown into main flows.
+  const trafficEventStore = repos.prisma
+    ? new PrismaTrafficEventStore(repos.prisma)
+    : new InMemoryTrafficEventStore();
+  const trafficEvents = new TrafficEventService(trafficEventStore);
   const googleAdsSync = new GoogleAdsSyncService(
     repos.googleAccounts,
     provider,
@@ -102,7 +113,9 @@ export function createServices(
   const clickIngestion = new ClickIngestionService(
     trackingResolver,
     repos.clicks,
-    repos.unitOfWork
+    repos.unitOfWork,
+    trafficEvents,
+    repos.adGroupCriteria
   );
   const trackingLinks = new TrackingLinkManagementService(
     repos.trackingLinks,
@@ -133,7 +146,8 @@ export function createServices(
     repos.unitOfWork,
     audit,
     repos.syncJobs,
-    jobProducer
+    jobProducer,
+    trafficEvents
   );
 
   const urlChangeRequests = new UrlChangeRequestService(
@@ -154,6 +168,7 @@ export function createServices(
           syncJobs: repos.syncJobs,
           urlChangeRequests,
           orderConversions,
+          prisma: repos.prisma ?? undefined,
         })
       : undefined);
 

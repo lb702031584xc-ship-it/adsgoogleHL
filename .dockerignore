@@ -1,0 +1,9 @@
+# Build caches / incremental state must never enter the image context:
+# a stale tsconfig.tsbuildinfo with missing dist/ makes tsc skip .d.ts emit.
+**/tsconfig.tsbuildinfo
+**/dist
+**/.next
+**/node_modules
+.git
+.env
+*.log

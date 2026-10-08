@@ -4,13 +4,21 @@ import {
   ExecutionBadge,
 } from "@/components/dashboard/status-badges";
 import { TruncateId, formatTimestamp } from "@/components/dashboard/format";
+import { useDict } from "@/i18n/use-dict";
 
 export function SummaryCards({ summary }: { summary: DashboardSummary }) {
+  const t = useDict();
   const cards = [
-    { label: "Targets", value: summary.targets.total },
-    { label: "Synced", value: summary.targets.synced },
-    { label: "Out of Sync", value: summary.targets.outOfSync },
-    { label: "Never Applied", value: summary.targets.neverApplied },
+    { label: t.dashboard.summary.cards.targets, value: summary.targets.total },
+    { label: t.dashboard.summary.cards.synced, value: summary.targets.synced },
+    {
+      label: t.dashboard.summary.cards.outOfSync,
+      value: summary.targets.outOfSync,
+    },
+    {
+      label: t.dashboard.summary.cards.neverApplied,
+      value: summary.targets.neverApplied,
+    },
   ];
 
   return (
@@ -33,21 +41,22 @@ export function SummaryCards({ summary }: { summary: DashboardSummary }) {
 }
 
 export function IntegrationOverview({ summary }: { summary: DashboardSummary }) {
+  const t = useDict();
   return (
     <section className="rounded-xl border border-ink/10 bg-white/80 p-5 shadow-sm">
       <h2 className="font-display text-xl font-semibold text-ink">
-        Integration status
+        {t.dashboard.summary.title}
       </h2>
       <dl className="mt-4 grid gap-3 sm:grid-cols-2">
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Name
+            {t.common.misc.name}
           </dt>
           <dd className="mt-1 text-sm text-ink">{summary.integration.name}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Status
+            {t.common.misc.status}
           </dt>
           <dd className="mt-1 text-sm font-semibold text-ink">
             {summary.integration.status}
@@ -55,7 +64,7 @@ export function IntegrationOverview({ summary }: { summary: DashboardSummary }) 
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Integration ID
+            {t.dashboard.summary.fields.integrationId}
           </dt>
           <dd className="mt-1">
             <TruncateId value={summary.integration.integrationId} />
@@ -63,7 +72,7 @@ export function IntegrationOverview({ summary }: { summary: DashboardSummary }) 
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Current Desired Version
+            {t.dashboard.summary.fields.currentDesiredVersion}
           </dt>
           <dd className="mt-1 text-sm text-ink">
             {summary.versions.currentDesiredVersion ?? "—"}
@@ -71,7 +80,7 @@ export function IntegrationOverview({ summary }: { summary: DashboardSummary }) 
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Connection Health
+            {t.dashboard.summary.fields.connectionHealth}
           </dt>
           <dd className="mt-1">
             <ConnectionHealthBadge value={summary.health.connection} />
@@ -79,7 +88,7 @@ export function IntegrationOverview({ summary }: { summary: DashboardSummary }) 
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Last Execution
+            {t.dashboard.summary.fields.lastExecution}
           </dt>
           <dd className="mt-1">
             <ExecutionBadge value={summary.health.lastExecution} />
@@ -87,7 +96,7 @@ export function IntegrationOverview({ summary }: { summary: DashboardSummary }) 
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Applied Targets
+            {t.dashboard.summary.fields.appliedTargets}
           </dt>
           <dd className="mt-1 text-sm text-ink">
             {summary.versions.appliedTargets}
@@ -95,7 +104,7 @@ export function IntegrationOverview({ summary }: { summary: DashboardSummary }) 
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Pending Targets
+            {t.dashboard.summary.fields.pendingTargets}
           </dt>
           <dd className="mt-1 text-sm text-ink">
             {summary.versions.pendingTargets}
@@ -123,21 +132,22 @@ export function IntegrationDetailCard({
   lastSeenAt: string | null;
   createdAt: string;
 }) {
+  const t = useDict();
   return (
     <section className="rounded-xl border border-ink/10 bg-white/80 p-5 shadow-sm">
       <h2 className="font-display text-xl font-semibold text-ink">
-        Integration details
+        {t.dashboard.summary.detailTitle}
       </h2>
       <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Name
+            {t.common.misc.name}
           </dt>
           <dd className="mt-1 text-sm text-ink">{name}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Integration ID
+            {t.dashboard.summary.fields.integrationId}
           </dt>
           <dd className="mt-1">
             <TruncateId value={integrationId} />
@@ -145,13 +155,13 @@ export function IntegrationDetailCard({
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Status
+            {t.common.misc.status}
           </dt>
           <dd className="mt-1 text-sm font-semibold text-ink">{status}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Google Account ID
+            {t.dashboard.summary.detailFields.googleAccountId}
           </dt>
           <dd className="mt-1">
             <TruncateId value={googleAccountId} />
@@ -159,13 +169,13 @@ export function IntegrationDetailCard({
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Config Generation
+            {t.dashboard.summary.detailFields.configGeneration}
           </dt>
           <dd className="mt-1 text-sm text-ink">{configGeneration}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Last Seen
+            {t.dashboard.summary.detailFields.lastSeen}
           </dt>
           <dd className="mt-1 text-sm text-ink">
             {formatTimestamp(lastSeenAt)}
@@ -173,7 +183,7 @@ export function IntegrationDetailCard({
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink/50">
-            Created At
+            {t.common.misc.created}
           </dt>
           <dd className="mt-1 text-sm text-ink">
             {formatTimestamp(createdAt)}

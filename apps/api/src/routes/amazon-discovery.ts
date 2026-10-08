@@ -1,0 +1,168 @@
+/**
+ * Amazon 自动选品 API。
+ *
+ * - POST /api/v1/amazon/discover — 执行一次选品发现（需 PA-API 凭证）
+ * - GET  /api/v1/amazon/discoveries — 历史发现记录
+ * - GET  /api/v1/amazon/discoveries/:runId — 某次发现的产品列表
+ * - POST /api/v1/amazon/discoveries/:runId/import — 导入选中的产品为 Offer
+ *
+ * 凭证从 AiSetting 加密字段读取（key: amazon_paapi_key），
+ * 格式：AccessKey|SecretKey|PartnerTag|Region。
+ */
+import { randomUUID } from "node:crypto";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { PrismaClient } from "@adlinklab/database";
+import {
+  NotFoundError,
+  UnauthorizedError,
+  ValidationError,
+} from "@adlinklab/shared";
+import {
+  authenticateSessionRequest,
+  type SessionAuthInfo,
+} from "../auth/sessions.js";
+import {
+  runDiscovery,
+  listDiscoveries,
+  getDiscoveryProducts,
+  validateCriteria,
+} from "../services/amazon-discovery.js";
+
+interface Deps {
+  prisma: PrismaClient;
+}
+
+async function requireSession(
+  deps: Deps,
+  request: FastifyRequest
+): Promise<SessionAuthInfo> {
+  const info =
+    request.sessionAuth ??
+    (await authenticateSessionRequest(deps.prisma, request));
+  if (!info) {
+    throw new UnauthorizedError("Authentication required");
+  }
+  return info;
+}
+
+async function getPaApiKey(
+  prisma: PrismaClient,
+  tenantId: string
+): Promise<string | null> {
+  void tenantId;
+  const setting = await prisma.aiSetting.findUnique({
+    where: { key: "amazon_paapi_key" },
+    select: { value: true },
+  });
+  // value 是加密存储的，这里假设已解密（实际由 network-crypto 处理）
+  return setting?.value ?? process.env.AMAZON_PAAPI_KEY ?? null;
+}
+
+export function registerAmazonDiscoveryRoutes(
+  app: FastifyInstance,
+  deps: Deps
+): void {
+  const { prisma } = deps;
+
+  /** 执行选品发现 */
+  app.post<{
+    Body: {
+      keywords?: unknown;
+      minPrice?: unknown;
+      maxPrice?: unknown;
+      minRating?: unknown;
+      minReviews?: unknown;
+      region?: unknown;
+      maxResults?: unknown;
+    };
+  }>("/api/v1/amazon/discover", async (request) => {
+    const session = await requireSession(deps, request);
+    const apiKey = await getPaApiKey(prisma, session.tenantId);
+    if (!apiKey) {
+      throw new ValidationError(
+        "未配置 Amazon PA-API 凭证。请先在 AI 设置中配置 amazon_paapi_key（格式：AccessKey|SecretKey|PartnerTag|Region）"
+      );
+    }
+    const criteria = validateCriteria(request.body ?? {});
+    const result = await runDiscovery(
+      prisma,
+      session.tenantId,
+      session.id,
+      apiKey,
+      criteria
+    );
+    return result;
+  });
+
+  /** 历史发现记录 */
+  app.get("/api/v1/amazon/discoveries", async (request) => {
+    const session = await requireSession(deps, request);
+    const discoveries = await listDiscoveries(prisma, session.tenantId);
+    return { discoveries };
+  });
+
+  /** 某次发现的产品列表 */
+  app.get<{
+    Params: { runId: string };
+  }>("/api/v1/amazon/discoveries/:runId", async (request) => {
+    const session = await requireSession(deps, request);
+    const products = await getDiscoveryProducts(
+      prisma,
+      session.tenantId,
+      request.params.runId
+    );
+    if (products.length === 0) {
+      throw new NotFoundError("Discovery", request.params.runId);
+    }
+    return { products };
+  });
+
+  /** 导入选中的产品为 Offer */
+  app.post<{
+    Params: { runId: string };
+    Body: { asins?: unknown };
+  }>("/api/v1/amazon/discoveries/:runId/import", async (request) => {
+    const session = await requireSession(deps, request);
+    const products = await getDiscoveryProducts(
+      prisma,
+      session.tenantId,
+      request.params.runId
+    );
+    if (products.length === 0) {
+      throw new NotFoundError("Discovery", request.params.runId);
+    }
+    const asins = Array.isArray(request.body?.asins)
+      ? (request.body.asins as unknown[]).filter(
+          (a): a is string => typeof a === "string"
+        )
+      : products.map((p) => p.asin);
+    const selected = products.filter((p) => asins.includes(p.asin));
+    if (selected.length === 0) {
+      throw new ValidationError("未选中任何产品");
+    }
+
+    const imported: Array<{ asin: string; offerId: string }> = [];
+    for (const p of selected) {
+      // 生成带 PartnerTag 的联盟链接
+      const tag = process.env.AMAZON_PARTNER_TAG ?? "";
+      const url = tag
+        ? `${p.detailPageUrl}${p.detailPageUrl.includes("?") ? "&" : "?"}tag=${tag}`
+        : p.detailPageUrl;
+      const offer = await prisma.offer.create({
+        data: {
+          id: randomUUID(),
+          tenantId: session.tenantId,
+          name: p.title.slice(0, 200),
+          network: "amazon",
+          destinationUrl: url,
+          status: "ACTIVE",
+          commissionValue: p.estimatedCommission,
+          commissionType: "fixed",
+        },
+        select: { id: true },
+      });
+      imported.push({ asin: p.asin, offerId: offer.id });
+    }
+    return { imported, count: imported.length };
+  });
+}

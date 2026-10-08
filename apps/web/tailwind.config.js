@@ -5,6 +5,7 @@ module.exports = {
     extend: {
       colors: {
         ink: "#0f1c2e",
+        paper: "#f8f6f0",
         mist: "#e8eef5",
         signal: "#1f6feb",
         sand: "#c4a35a",

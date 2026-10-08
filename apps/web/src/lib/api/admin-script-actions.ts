@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { adminScriptApi } from "./admin-script";
 import { mapAdminErrorMessage } from "./admin-script-config";
+import { getLang } from "@/i18n/lang";
 
 export type AdminActionResult<T = unknown> =
   | { ok: true; data: T }
@@ -37,7 +38,7 @@ export async function createIntegrationAction(input: {
       },
     };
   } catch (error) {
-    return { ok: false, error: mapAdminErrorMessage(error) };
+    return { ok: false, error: mapAdminErrorMessage(error, await getLang()) };
   }
 }
 
@@ -52,7 +53,7 @@ export async function rotateTokenAction(
       data: { token: data.token, tokenPrefix: data.tokenPrefix },
     };
   } catch (error) {
-    return { ok: false, error: mapAdminErrorMessage(error) };
+    return { ok: false, error: mapAdminErrorMessage(error, await getLang()) };
   }
 }
 
@@ -64,7 +65,7 @@ export async function revokeIntegrationAction(
     revalidateIntegration(integrationId);
     return { ok: true, data: null };
   } catch (error) {
-    return { ok: false, error: mapAdminErrorMessage(error) };
+    return { ok: false, error: mapAdminErrorMessage(error, await getLang()) };
   }
 }
 
@@ -76,7 +77,7 @@ export async function disableIntegrationAction(
     revalidateIntegration(integrationId);
     return { ok: true, data: null };
   } catch (error) {
-    return { ok: false, error: mapAdminErrorMessage(error) };
+    return { ok: false, error: mapAdminErrorMessage(error, await getLang()) };
   }
 }
 
@@ -88,7 +89,7 @@ export async function enableIntegrationAction(
     revalidateIntegration(integrationId);
     return { ok: true, data: null };
   } catch (error) {
-    return { ok: false, error: mapAdminErrorMessage(error) };
+    return { ok: false, error: mapAdminErrorMessage(error, await getLang()) };
   }
 }
 
@@ -104,7 +105,7 @@ export async function attachTargetAction(input: {
     revalidateIntegration(input.integrationId);
     return { ok: true, data: null };
   } catch (error) {
-    return { ok: false, error: mapAdminErrorMessage(error) };
+    return { ok: false, error: mapAdminErrorMessage(error, await getLang()) };
   }
 }
 
@@ -117,7 +118,7 @@ export async function detachTargetAction(input: {
     revalidateIntegration(input.integrationId);
     return { ok: true, data: null };
   } catch (error) {
-    return { ok: false, error: mapAdminErrorMessage(error) };
+    return { ok: false, error: mapAdminErrorMessage(error, await getLang()) };
   }
 }
 
@@ -146,6 +147,6 @@ export async function generateScriptAction(input: {
       },
     };
   } catch (error) {
-    return { ok: false, error: mapAdminErrorMessage(error) };
+    return { ok: false, error: mapAdminErrorMessage(error, await getLang()) };
   }
 }

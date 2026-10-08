@@ -1,14 +1,12 @@
 /**
  * Phase 8.4.7.2 — Dashboard API client (GET only).
  * Runs on the server (Server Components / Server Actions).
+ * Per-user: forwards the login session cookie; each user sees their own tenant's data.
  * Never logs Authorization headers or tokens.
  */
 
-import {
-  DashboardApiError,
-  getApiBaseUrl,
-  getDashboardIntegrationToken,
-} from "./dashboard-config";
+import { DashboardApiError, getApiBaseUrl } from "./dashboard-config";
+import { sessionHeaders } from "./session";
 import type {
   DashboardIntegrationDetail,
   DashboardIntegrationsResponse,
@@ -20,6 +18,7 @@ import type {
 export interface DashboardFetchDeps {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
+  sessionHeadersImpl?: () => Promise<Record<string, string>>;
 }
 
 async function dashboardGet<T>(
@@ -28,8 +27,9 @@ async function dashboardGet<T>(
 ): Promise<T> {
   const env = deps.env ?? process.env;
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const sessionHeadersImpl = deps.sessionHeadersImpl ?? sessionHeaders;
   const base = getApiBaseUrl(env);
-  const token = getDashboardIntegrationToken(env);
+  const authHeaders = await sessionHeadersImpl();
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
 
   let response: Response;
@@ -37,7 +37,7 @@ async function dashboardGet<T>(
     response = await fetchImpl(url, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...authHeaders,
         Accept: "application/json",
       },
       cache: "no-store",

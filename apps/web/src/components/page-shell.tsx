@@ -1,10 +1,14 @@
-export function PageShell({
+import { getLang } from "@/i18n/lang";
+import { getDictionary } from "@/i18n/dictionaries";
+
+export async function PageShell({
   title,
   description,
 }: {
   title: string;
   description: string;
 }) {
+  const t = getDictionary(await getLang());
   return (
     <section className="max-w-4xl">
       <p className="text-sm font-semibold uppercase tracking-[0.14em] text-signal">
@@ -15,11 +19,9 @@ export function PageShell({
       </h1>
       <p className="mt-3 max-w-2xl text-lg text-ink/70">{description}</p>
       <div className="mt-8 rounded-xl border border-ink/10 bg-white/70 p-6 shadow-sm backdrop-blur">
-        <p className="text-sm font-semibold text-ink">Phase 0 skeleton</p>
+        <p className="text-sm font-semibold text-ink">{t.ops.pageShell.skeletonTitle}</p>
         <p className="mt-2 text-sm text-ink/65">
-          UI shell only. Data wiring and interactive workflows arrive in later
-          phases. Provider / Adapter boundaries are enforced in the API and
-          packages layer.
+          {t.ops.pageShell.skeletonBody}
         </p>
       </div>
     </section>

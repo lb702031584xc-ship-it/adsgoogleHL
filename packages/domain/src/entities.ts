@@ -197,6 +197,11 @@ export interface Click {
   ingestionId?: string;
   occurredAt: Date;
   createdAt: Date;
+  /** Phase 2 — traffic attribution (additive). Only real observed values; never invented. */
+  trafficSource?: string;
+  trafficMedium?: string;
+  /** Google Ads criterion match type (EXACT/PHRASE/BROAD) — real lookup only */
+  matchType?: string;
 }
 
 export interface Conversion extends Timestamps, SoftDeleteFields {

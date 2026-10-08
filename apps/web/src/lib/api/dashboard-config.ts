@@ -2,6 +2,7 @@
  * Phase 8.4.7.2 — Dashboard API config (server-side secrets only).
  * Token must NEVER use NEXT_PUBLIC_* — never ship to the browser bundle.
  */
+import { getDictionary, type Lang } from "@/i18n/dictionaries";
 
 export function getApiBaseUrl(
   env: NodeJS.ProcessEnv = process.env
@@ -52,18 +53,19 @@ export class DashboardApiError extends Error {
 }
 
 /** Map HTTP status to safe user-facing message (no secrets / stack). */
-export function mapDashboardErrorMessage(error: unknown): string {
+export function mapDashboardErrorMessage(
+  error: unknown,
+  lang: Lang = "en"
+): string {
+  const t = getDictionary(lang).dashboard.errors;
   if (error instanceof DashboardConfigError) {
-    return "Dashboard is not configured. Set API base URL and integration token on the server.";
+    return t.notConfigured;
   }
   if (error instanceof DashboardApiError) {
-    if (error.status === 401) return "Authentication required.";
-    if (error.status === 403) {
-      return "You do not have access to this integration.";
-    }
-    if (error.status === 404) return "Dashboard resource was not found.";
-    if (error.status >= 500) return "Unable to load dashboard data.";
-    return "Unable to load dashboard data.";
+    if (error.status === 401) return t.authRequired;
+    if (error.status === 403) return t.forbidden;
+    if (error.status === 404) return t.notFound;
+    return t.loadFailed;
   }
-  return "Unable to load dashboard data.";
+  return t.loadFailed;
 }

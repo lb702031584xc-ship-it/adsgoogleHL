@@ -469,6 +469,9 @@ function toClick(row: {
   ingestionId?: string | null;
   occurredAt?: Date | null;
   createdAt: Date;
+  trafficSource: string | null;
+  trafficMedium: string | null;
+  matchType: string | null;
 }): Click {
   const queryParameters =
     row.queryParameters &&
@@ -506,6 +509,9 @@ function toClick(row: {
     ingestionId: row.ingestionId ?? undefined,
     occurredAt: row.occurredAt ?? row.createdAt,
     createdAt: row.createdAt,
+    trafficSource: row.trafficSource ?? undefined,
+    trafficMedium: row.trafficMedium ?? undefined,
+    matchType: row.matchType ?? undefined,
   };
 }
 
@@ -1449,6 +1455,9 @@ export class PrismaClickRepository implements ClickRepository {
             ingestionId: data.ingestionId ?? null,
             occurredAt: data.occurredAt ?? data.createdAt ?? new Date(),
             createdAt: data.createdAt,
+            trafficSource: data.trafficSource ?? null,
+            trafficMedium: data.trafficMedium ?? null,
+            matchType: data.matchType ?? null,
           },
         })
       );

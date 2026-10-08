@@ -1,0 +1,433 @@
+/**
+ * 功能2 — 自动化广告 API（输入终链 URL → AI 生成广告计划 → Script 建广告）。
+ *
+ * - POST /api/v1/ads/auto-create          生成预览计划（plan 存内存，2h TTL）
+ * - POST /api/v1/ads/auto-create/confirm  确认 → 创建 ScriptSyncTarget
+ *                                          任务（类型 create-campaign）+ AuditLog
+ * - GET  /api/v1/ads/auto-create/:planId/copy-pack
+ *                                         纯文本：Amazon/手动投放用，需手动创建
+ * - GET  /api/v1/ads/auto-create/:planId/script
+ *                                         create-campaign Google Ads Script 源码
+ *
+ * Session auth only (one tenant per user). Requires LLM configured
+ * (same AI settings as /api/v1/ai/*). Never logs URLs beyond the plan or keys.
+ */
+import { randomUUID } from "node:crypto";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import {
+  AppError,
+  NotFoundError,
+  UnauthorizedError,
+  ValidationError,
+} from "@adlinklab/shared";
+import type { PrismaClient } from "@adlinklab/database";
+import {
+  authenticateSessionRequest,
+  type SessionAuthInfo,
+} from "../auth/sessions.js";
+import {
+  assertAiSettingsPepperConfigured,
+  decryptSecret,
+} from "../ai/crypto.js";
+import { AiError, chatJson, chatJsonValidated } from "../ai/llm.js";
+import { fetchPage } from "../ai/fetch-page.js";
+import {
+  MAX_URLS_PER_PLAN,
+  PAGE_TEXT_LIMIT,
+  adPlanStore,
+  buildAdPlanPrompt,
+  buildCopyPack,
+  createPlanStore,
+  finalizeAdPlan,
+  validateAdPlanUrlDraft,
+  type AdPlan,
+  type AdPlanUrlDraft,
+  type PlanStore,
+} from "../ai/ad-generator.js";
+import type { AnalysisLanguage } from "../ai/prompts.js";
+import { buildCreateCampaignScript } from "../services/script-create-campaign.js";
+import {
+  buildRotationScript,
+  validateRotationScriptInput,
+  ROTATION_SCRIPT_VERSION,
+} from "../services/script-rotation.js";
+
+export interface AdsAutoRouteDeps {
+  prisma: PrismaClient;
+  /** Injectable for tests. */
+  chatJsonImpl?: typeof chatJson;
+  /** Injectable for tests. */
+  fetchPageImpl?: typeof fetchPage;
+  /** Injectable for tests; defaults to the process-wide singleton. */
+  planStore?: PlanStore;
+}
+
+/** ScriptSyncTarget "task type" for auto-created campaigns. */
+export const CREATE_CAMPAIGN_TASK_TYPE = "create-campaign";
+
+const SETTING_BASE_URL = "llm.baseUrl";
+const SETTING_MODEL = "llm.model";
+const SETTING_API_KEY_ENC = "llm.apiKeyEnc";
+
+interface LlmSettings {
+  baseUrl?: string;
+  model?: string;
+  apiKeyEnc?: string;
+}
+
+async function readLlmSettings(prisma: PrismaClient): Promise<LlmSettings> {
+  const rows = await prisma.aiSetting.findMany();
+  const out: LlmSettings = {};
+  for (const r of rows as Array<{ key: string; value: string }>) {
+    if (r.key === SETTING_BASE_URL) out.baseUrl = r.value;
+    else if (r.key === SETTING_MODEL) out.model = r.value;
+    else if (r.key === SETTING_API_KEY_ENC) out.apiKeyEnc = r.value;
+  }
+  return out;
+}
+
+async function requireSession(
+  deps: AdsAutoRouteDeps,
+  request: FastifyRequest
+): Promise<SessionAuthInfo> {
+  const info =
+    request.sessionAuth ??
+    (await authenticateSessionRequest(deps.prisma, request));
+  if (!info) {
+    throw new UnauthorizedError("Authentication required");
+  }
+  return info;
+}
+
+function asTrimmedString(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t ? t : undefined;
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function asUuid(v: unknown, field: string): string | undefined {
+  const s = asTrimmedString(v);
+  if (s === undefined) return undefined;
+  if (!UUID_RE.test(s)) {
+    throw new ValidationError(`${field} must be a UUID`);
+  }
+  return s;
+}
+
+function assertHttpUrl(raw: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new ValidationError(`Invalid URL: ${raw}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ValidationError(`Only http(s) URLs are allowed: ${raw}`);
+  }
+  return parsed.toString();
+}
+
+export async function registerAdsAutoRoutes(
+  app: FastifyInstance,
+  deps: AdsAutoRouteDeps
+): Promise<void> {
+  const {
+    prisma,
+    chatJsonImpl = chatJson,
+    fetchPageImpl = fetchPage,
+    planStore = adPlanStore,
+  } = deps;
+
+  function loadPlan(planId: string, tenantId: string): AdPlan {
+    const stored = planStore.get(planId);
+    if (!stored) {
+      // Missing or TTL-expired.
+      throw new AppError("Ad plan not found or expired", {
+        code: "PLAN_NOT_FOUND",
+        statusCode: 410,
+      });
+    }
+    if (stored.plan.tenantId !== tenantId) {
+      throw new NotFoundError("AdPlan", planId);
+    }
+    return stored.plan;
+  }
+
+  /**
+   * Generate a preview ad plan from offer final URLs.
+   * One campaign; one ad group (+RSA) per URL. Stored in-memory for confirm.
+   */
+  app.post<{
+    Body: {
+      urls?: unknown;
+      offerId?: unknown;
+      googleAccountId?: unknown;
+      language?: unknown;
+    };
+  }>("/api/v1/ads/auto-create", async (request) => {
+    const info = await requireSession(deps, request);
+    const body = request.body ?? {};
+
+    if (!Array.isArray(body.urls) || body.urls.length === 0) {
+      throw new ValidationError("urls must be a non-empty array");
+    }
+    if (body.urls.length > MAX_URLS_PER_PLAN) {
+      throw new ValidationError(
+        `urls must contain at most ${MAX_URLS_PER_PLAN} entries`
+      );
+    }
+    const urls: string[] = body.urls.map((u, i) => {
+      if (typeof u !== "string" || !u.trim()) {
+        throw new ValidationError(`urls[${i}] must be a non-empty string`);
+      }
+      return assertHttpUrl(u.trim());
+    });
+    const offerId = asUuid(body.offerId, "offerId") ?? null;
+    const googleAccountId = asUuid(body.googleAccountId, "googleAccountId") ?? null;
+    const language: AnalysisLanguage = body.language === "en" ? "en" : "zh";
+
+    const settings = await readLlmSettings(prisma);
+    if (!(settings.baseUrl && settings.model && settings.apiKeyEnc)) {
+      throw new AppError("AI is not configured", {
+        code: "AI_NOT_CONFIGURED",
+        statusCode: 400,
+      });
+    }
+    const pepper = assertAiSettingsPepperConfigured();
+    // apiKey lives only in this local; never logged.
+    const apiKey = decryptSecret(settings.apiKeyEnc, pepper);
+
+    const drafts: AdPlanUrlDraft[] = [];
+    const finalUrls: string[] = [];
+    // Sequential per URL: keeps page-fetch + LLM load predictable.
+    for (const url of urls) {
+      let pageText: string;
+      let finalUrl: string;
+      try {
+        const fetched = await fetchPageImpl(url);
+        pageText = fetched.text.slice(0, PAGE_TEXT_LIMIT);
+        finalUrl = fetched.finalUrl;
+      } catch (e) {
+        if (e instanceof AiError) throw e;
+        throw new AiError("Failed to fetch offer page");
+      }
+      let draft: AdPlanUrlDraft;
+      try {
+        draft = await chatJsonValidated(
+          {
+            baseUrl: settings.baseUrl as string,
+            model: settings.model as string,
+            apiKey,
+            ...buildAdPlanPrompt({ url: finalUrl, pageText, language }),
+          },
+          validateAdPlanUrlDraft,
+          chatJsonImpl
+        );
+      } catch (e) {
+        if (e instanceof AiError) throw e;
+        throw new AiError("LLM request failed");
+      }
+      drafts.push(draft);
+      finalUrls.push(finalUrl);
+    }
+
+    const plan = finalizeAdPlan(drafts, {
+      planId: randomUUID(),
+      tenantId: info.tenantId,
+      language,
+      offerId,
+      googleAccountId,
+      finalUrls,
+    });
+    planStore.put(plan);
+
+    return {
+      planId: plan.planId,
+      plan,
+      expiresInSeconds: 2 * 60 * 60,
+    };
+  });
+
+  /**
+   * Confirm a preview plan: queue a `create-campaign` ScriptSyncTarget task
+   * and write an AuditLog entry. Idempotent per planId.
+   */
+  app.post<{
+    Body: { planId?: unknown };
+  }>("/api/v1/ads/auto-create/confirm", async (request) => {
+    const info = await requireSession(deps, request);
+    const body = (request.body ?? {}) as { planId?: unknown; maxCpc?: unknown };
+    const planId = asTrimmedString(body.planId);
+    if (!planId || !UUID_RE.test(planId)) {
+      throw new ValidationError("planId must be a UUID");
+    }
+    const maxCpcOverride =
+      body.maxCpc !== undefined && body.maxCpc !== null && body.maxCpc !== ""
+        ? Number(body.maxCpc)
+        : null;
+    if (maxCpcOverride !== null && (!Number.isFinite(maxCpcOverride) || maxCpcOverride <= 0)) {
+      throw new ValidationError("maxCpc must be a positive number");
+    }
+    const plan = loadPlan(planId, info.tenantId);
+
+    // Apply bid override to all ad groups if provided.
+    if (maxCpcOverride !== null) {
+      for (const g of plan.adGroups) {
+        g.group.maxCpc = {
+          amount: maxCpcOverride,
+          currency: g.group.maxCpc?.currency ?? plan.campaign.dailyBudget.currency,
+          dataQuality: "PREDICTED",
+        };
+      }
+    }
+
+    // Resolve the Script integration that will execute the task.
+    const integrationWhere: Record<string, unknown> = {
+      tenantId: info.tenantId,
+      status: "ACTIVE",
+    };
+    if (plan.googleAccountId) {
+      integrationWhere.googleAccountId = plan.googleAccountId;
+    }
+    const integration = await prisma.googleAdsScriptIntegration.findFirst({
+      where: integrationWhere,
+    });
+    if (!integration) {
+      throw new ValidationError(
+        "No active Google Ads Script integration found for this tenant" +
+          (plan.googleAccountId ? " and Google account" : "") +
+          ". Set up a Script integration first."
+      );
+    }
+
+    // Idempotent: confirming the same plan twice returns the existing target.
+    const existing = await prisma.scriptSyncTarget.findFirst({
+      where: {
+        tenantId: info.tenantId,
+        integrationId: integration.id,
+        entityType: "CAMPAIGN",
+        entityId: plan.planId,
+      },
+    });
+    if (existing) {
+      return {
+        planId: plan.planId,
+        targetId: existing.id,
+        taskType: CREATE_CAMPAIGN_TASK_TYPE,
+        status: "QUEUED",
+        alreadyQueued: true,
+      };
+    }
+
+    const target = await prisma.scriptSyncTarget.create({
+      data: {
+        id: randomUUID(),
+        tenantId: info.tenantId,
+        integrationId: integration.id,
+        entityType: "CAMPAIGN",
+        // Polymorphic reference: the in-memory plan id (UUID).
+        entityId: plan.planId,
+        desiredVersion: 1,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        id: randomUUID(),
+        tenantId: info.tenantId,
+        actorId: info.id,
+        action: "ADS_AUTO_CREATE_CONFIRMED",
+        entityType: "ScriptSyncTarget",
+        entityId: target.id,
+        // Deep-clone to plain JSON for the Prisma Json field.
+        after: JSON.parse(
+          JSON.stringify({
+            taskType: CREATE_CAMPAIGN_TASK_TYPE,
+            planId: plan.planId,
+            integrationId: integration.id,
+            campaignName: plan.campaign.name,
+            adGroupCount: plan.adGroups.length,
+            dailyBudget: plan.campaign.dailyBudget,
+          })
+        ) as never,
+      },
+    });
+
+    return {
+      planId: plan.planId,
+      targetId: target.id,
+      taskType: CREATE_CAMPAIGN_TASK_TYPE,
+      status: "QUEUED",
+      alreadyQueued: false,
+      integrationId: integration.id,
+      scriptUrl: `/api/v1/ads/auto-create/${plan.planId}/script`,
+      copyPackUrl: `/api/v1/ads/auto-create/${plan.planId}/copy-pack`,
+    };
+  });
+
+  /**
+   * Copy pack for Amazon / manual placement. Plain text, explicitly marked
+   * "Amazon/手动投放用，需手动创建" — Amazon has no Script mechanism.
+   */
+  app.get<{
+    Params: { planId: string };
+  }>("/api/v1/ads/auto-create/:planId/copy-pack", async (request, reply) => {
+    const info = await requireSession(deps, request);
+    const plan = loadPlan(request.params.planId, info.tenantId);
+    const text = buildCopyPack(plan);
+    return reply
+      .header("content-type", "text/plain; charset=utf-8")
+      .header(
+        "content-disposition",
+        `attachment; filename="adlinklab-copy-pack-${plan.planId.slice(0, 8)}.txt"`
+      )
+      .send(text);
+  });
+
+  /**
+   * The `create-campaign` Google Ads Script source for this plan.
+   * Paste into Google Ads Scripts and run once.
+   */
+  app.get<{
+    Params: { planId: string };
+  }>("/api/v1/ads/auto-create/:planId/script", async (request) => {
+    const info = await requireSession(deps, request);
+    const plan = loadPlan(request.params.planId, info.tenantId);
+    return {
+      planId: plan.planId,
+      fileName: `adlinklab-create-campaign-${plan.planId.slice(0, 8)}.js`,
+      templateVersion: "1.0.0",
+      source: buildCreateCampaignScript(plan),
+    };
+  });
+
+  /**
+   * 方案 B — 直链轮换 Script 生成。
+   * 输入标签名，返回可直接粘贴到 Google Ads 脚本的 JS 代码。
+   */
+  app.post<{
+    Body: { label?: unknown };
+  }>("/api/v1/ads/rotation-script", async (request) => {
+    await requireSession(deps, request);
+    const label =
+      typeof request.body?.label === "string"
+        ? request.body.label.trim()
+        : "";
+    const errors = validateRotationScriptInput({ label });
+    if (errors.length > 0) {
+      throw new ValidationError(errors.join("; "));
+    }
+    const safeLabel = label.replace(/["\\]/g, "");
+    return {
+      fileName: `adlinklab-rotation-${safeLabel}.js`,
+      templateVersion: ROTATION_SCRIPT_VERSION,
+      source: buildRotationScript({ label: safeLabel }),
+    };
+  });
+}
+
+/** Re-exported for tests that want an isolated store. */
+export { createPlanStore };

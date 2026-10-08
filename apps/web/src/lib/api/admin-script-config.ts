@@ -3,6 +3,7 @@
  * Uses Tenant API Key — never Integration Token for admin mutations.
  * Never NEXT_PUBLIC_* for secrets.
  */
+import { getDictionary, type Lang } from "@/i18n/dictionaries";
 
 export function getApiBaseUrl(
   env: NodeJS.ProcessEnv = process.env
@@ -42,8 +43,8 @@ export class AdminScriptConfigError extends Error {
   }
 }
 
-export function mapAdminErrorMessage(error: unknown): string {
+export function mapAdminErrorMessage(error: unknown, lang: Lang = "en"): string {
   if (error instanceof AdminScriptConfigError) return error.message;
   if (error instanceof Error) return error.message;
-  return "Unexpected admin API error";
+  return getDictionary(lang).integrations.errors.unexpected;
 }

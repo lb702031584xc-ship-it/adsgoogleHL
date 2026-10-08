@@ -6,10 +6,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createIntegrationAction } from "@/lib/api/admin-script-actions";
+import { useDict } from "@/i18n/use-dict";
 
 export function CreateIntegrationForm(props: {
   accounts: Array<{ id: string; name: string }>;
 }) {
+  const t = useDict();
   const router = useRouter();
   const [pending, start] = useTransition();
   const [name, setName] = useState("");
@@ -44,11 +46,10 @@ export function CreateIntegrationForm(props: {
     return (
       <div className="space-y-4 rounded-xl border border-amber-500/40 bg-amber-50/80 p-6">
         <h2 className="font-display text-xl font-semibold text-ink">
-          Integration token (shown once)
+          {t.integrations.form.tokenTitle}
         </h2>
         <p className="text-sm text-ink/70">
-          This token will only be shown once. Store it securely. It is required
-          to generate Google Ads Script source later.
+          {t.integrations.form.tokenNote}
         </p>
         <pre className="overflow-x-auto rounded-lg bg-ink/5 p-3 text-sm break-all">
           {onceToken}
@@ -59,14 +60,14 @@ export function CreateIntegrationForm(props: {
             onClick={() => void copyToken()}
             className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper"
           >
-            {copied ? "Copied" : "Copy Token"}
+            {copied ? t.common.actions.copied : t.integrations.form.copyToken}
           </button>
           <button
             type="button"
             onClick={() => router.push(`/script-integrations/${integrationId}`)}
             className="rounded-lg border border-ink/20 px-4 py-2 text-sm font-medium text-ink"
           >
-            Continue
+            {t.integrations.form.continue}
           </button>
         </div>
       </div>
@@ -76,16 +77,16 @@ export function CreateIntegrationForm(props: {
   return (
     <div className="space-y-4 rounded-xl border border-ink/10 bg-white/70 p-6">
       <label className="block text-sm font-medium text-ink">
-        Integration Name
+        {t.integrations.form.nameLabel}
         <input
           className="mt-1 w-full rounded-lg border border-ink/15 bg-white px-3 py-2"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Production US Script"
+          placeholder={t.integrations.form.namePlaceholder}
         />
       </label>
       <label className="block text-sm font-medium text-ink">
-        Google Account
+        {t.integrations.form.accountLabel}
         <select
           className="mt-1 w-full rounded-lg border border-ink/15 bg-white px-3 py-2"
           value={googleAccountId}
@@ -105,7 +106,7 @@ export function CreateIntegrationForm(props: {
         onClick={onCreate}
         className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper disabled:opacity-50"
       >
-        {pending ? "Creating…" : "Create Integration"}
+        {pending ? t.integrations.form.creating : t.integrations.list.create}
       </button>
     </div>
   );

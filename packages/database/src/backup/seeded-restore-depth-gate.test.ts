@@ -75,7 +75,7 @@ describe("Phase 12.2-B seeded restore depth gate", () => {
     expect(result.failedStage).toBeNull();
     expect(result.backupId).toBe("test-backup-1");
     expect(result.depthVerification.status).toBe("passed");
-    expect(result.depthVerification.passedCount).toBe(21);
+    expect(result.depthVerification.passedCount).toBe(11);
     expect(result.sourceComparison.restoredDataMatchesSource).toBe(true);
     expect(result.sourceUnchanged).toBe(true);
     expect(result.restore.shallowDataVerification).toBe("passed");

@@ -8,27 +8,20 @@
  * Run: pnpm --filter @adlinklab/database seed
  */
 import { Prisma, PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import {
   buildFixtureDataset,
   TenantA,
   TenantB,
 } from "../src/fixtures/index.js";
+// Single source of truth for the password hash format (apps/api).
+import { hashPassword } from "../../../apps/api/src/auth/password.js";
 
 const prisma = new PrismaClient();
 
 async function resetFixtureTenantsOnly() {
   const tenantIds = [TenantA.id, TenantB.id];
   // Child tables first — scoped to fixture tenants only
-  // Phase 13.4 Track B: Script Integration children before GoogleAccount / Tenant
-  await prisma.scriptSyncLog.deleteMany({
-    where: { tenantId: { in: tenantIds } },
-  });
-  await prisma.scriptSyncTarget.deleteMany({
-    where: { tenantId: { in: tenantIds } },
-  });
-  await prisma.googleAdsScriptIntegration.deleteMany({
-    where: { tenantId: { in: tenantIds } },
-  });
   await prisma.auditLog.deleteMany({ where: { tenantId: { in: tenantIds } } });
   await prisma.syncJob.deleteMany({ where: { tenantId: { in: tenantIds } } });
   await prisma.urlChangeRequest.deleteMany({
@@ -273,27 +266,6 @@ async function upsertDataset() {
     });
   }
 
-  for (const tlo of ds.trackingLinkOffers) {
-    await prisma.trackingLinkOffer.upsert({
-      where: { id: tlo.id },
-      create: {
-        id: tlo.id,
-        tenantId: tlo.tenantId,
-        trackingLinkId: tlo.trackingLinkId,
-        offerId: tlo.offerId,
-        priority: tlo.priority,
-        isFallback: tlo.isFallback,
-        createdAt: tlo.createdAt,
-      },
-      update: {
-        trackingLinkId: tlo.trackingLinkId,
-        offerId: tlo.offerId,
-        priority: tlo.priority,
-        isFallback: tlo.isFallback,
-      },
-    });
-  }
-
   for (const v of ds.urlVersions) {
     await prisma.urlVersion.upsert({
       where: { id: v.id },
@@ -503,102 +475,6 @@ async function upsertDataset() {
     });
   }
 
-  for (const si of ds.scriptIntegrations) {
-    await prisma.googleAdsScriptIntegration.upsert({
-      where: { id: si.id },
-      create: {
-        id: si.id,
-        tenantId: si.tenantId,
-        googleAccountId: si.googleAccountId,
-        name: si.name,
-        status: si.status,
-        tokenKeyId: si.tokenKeyId,
-        tokenPrefix: si.tokenPrefix,
-        tokenHash: si.tokenHash,
-        configGeneration: si.configGeneration,
-        lastSeenAt: si.lastSeenAt,
-        createdAt: si.createdAt,
-      },
-      update: {
-        name: si.name,
-        status: si.status,
-        tokenKeyId: si.tokenKeyId,
-        tokenPrefix: si.tokenPrefix,
-        tokenHash: si.tokenHash,
-        configGeneration: si.configGeneration,
-        lastSeenAt: si.lastSeenAt,
-        googleAccountId: si.googleAccountId,
-      },
-    });
-  }
-
-  for (const st of ds.scriptSyncTargets) {
-    await prisma.scriptSyncTarget.upsert({
-      where: { id: st.id },
-      create: {
-        id: st.id,
-        tenantId: st.tenantId,
-        integrationId: st.integrationId,
-        entityType: st.entityType,
-        entityId: st.entityId,
-        googleAdId: st.googleAdId,
-        campaignId: st.campaignId,
-        adGroupId: st.adGroupId,
-        desiredVersion: st.desiredVersion,
-        appliedVersion: st.appliedVersion,
-        lastSyncAt: st.lastSyncAt,
-        lastSuccessAt: st.lastSuccessAt,
-        syncState: st.syncState,
-        connectionHealth: st.connectionHealth,
-        lastExecution: st.lastExecution,
-        createdAt: st.createdAt,
-      },
-      update: {
-        entityType: st.entityType,
-        entityId: st.entityId,
-        googleAdId: st.googleAdId,
-        campaignId: st.campaignId,
-        adGroupId: st.adGroupId,
-        desiredVersion: st.desiredVersion,
-        appliedVersion: st.appliedVersion,
-        lastSyncAt: st.lastSyncAt,
-        lastSuccessAt: st.lastSuccessAt,
-        syncState: st.syncState,
-        connectionHealth: st.connectionHealth,
-        lastExecution: st.lastExecution,
-        integrationId: st.integrationId,
-      },
-    });
-  }
-
-  for (const log of ds.scriptSyncLogs) {
-    await prisma.scriptSyncLog.upsert({
-      where: { id: log.id },
-      create: {
-        id: log.id,
-        tenantId: log.tenantId,
-        integrationId: log.integrationId,
-        targetId: log.targetId,
-        desiredVersion: log.desiredVersion,
-        reportedAppliedVersion: log.reportedAppliedVersion,
-        result: log.result,
-        errorCode: log.errorCode,
-        errorMessage: log.errorMessage,
-        requestId: log.requestId,
-        idempotencyScope: log.idempotencyScope,
-        idempotencyKey: log.idempotencyKey,
-        createdAt: log.createdAt,
-      },
-      update: {
-        // append-only: keep identity + result stable on re-seed
-        result: log.result,
-        reportedAppliedVersion: log.reportedAppliedVersion,
-        errorCode: log.errorCode,
-        errorMessage: log.errorMessage,
-      },
-    });
-  }
-
   return ds;
 }
 
@@ -618,14 +494,55 @@ async function main() {
     offers: ds.offers.filter((o) => o.tenantId === TenantA.id).length,
     trackingLinks: ds.trackingLinks.filter((t) => t.tenantId === TenantA.id)
       .length,
-    trackingLinkOffers: ds.trackingLinkOffers.length,
-    scriptIntegrations: ds.scriptIntegrations.length,
-    scriptSyncTargets: ds.scriptSyncTargets.length,
-    scriptSyncLogs: ds.scriptSyncLogs.length,
     orders: ds.orders.filter((o) => o.tenantId === TenantA.id).length,
     urlChangeRequests: ds.urlChangeRequests.length,
     syncJobs: ds.syncJobs.length,
     mode: process.env.SEED_RESET === "1" ? "reset+upsert" : "idempotent-upsert",
+  });
+
+  await seedAdminUser();
+}
+
+/**
+ * Optional admin bootstrap: when ADMIN_EMAIL and ADMIN_PASSWORD are set,
+ * upsert an admin user into the fixture tenant that already holds the demo
+ * data (TenantA) — never creates a new tenant. Skipped silently otherwise.
+ */
+async function seedAdminUser() {
+  const email = (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD ?? "";
+  if (!email || !password) {
+    return;
+  }
+  const passwordHash = hashPassword(password);
+  const existing = await prisma.user.findFirst({ where: { email } });
+  if (existing) {
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        name: "Admin",
+        role: "admin",
+        status: "ACTIVE",
+        passwordHash,
+      },
+    });
+    console.log("Seed admin: updated existing user", { email });
+    return;
+  }
+  await prisma.user.create({
+    data: {
+      id: randomUUID(),
+      tenantId: TenantA.id,
+      email,
+      name: "Admin",
+      role: "admin",
+      status: "ACTIVE",
+      passwordHash,
+    },
+  });
+  console.log("Seed admin: created admin user", {
+    email,
+    tenantId: TenantA.id,
   });
 }
 

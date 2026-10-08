@@ -6,6 +6,7 @@
 
 import { dashboardApi } from "@/lib/api/dashboard";
 import { mapDashboardErrorMessage } from "@/lib/api/dashboard-config";
+import { getLang } from "@/i18n/lang";
 import type {
   DashboardIntegrationDetail,
   DashboardLogsPage,
@@ -20,14 +21,14 @@ export type DashboardActionResult<T> =
 function wrap<T>(promise: Promise<T>): Promise<DashboardActionResult<T>> {
   return promise
     .then((data) => ({ ok: true as const, data }))
-    .catch((error: unknown) => {
+    .catch(async (error: unknown) => {
       const status =
         error && typeof error === "object" && "status" in error
           ? Number((error as { status: number }).status)
           : undefined;
       return {
         ok: false as const,
-        error: mapDashboardErrorMessage(error),
+        error: mapDashboardErrorMessage(error, await getLang()),
         status: Number.isFinite(status) ? status : undefined,
       };
     });

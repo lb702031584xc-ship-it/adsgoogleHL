@@ -1,0 +1,153 @@
+/**
+ * Network API framework strings (2026-10-07).
+ * Registered in dictionaries.ts as `networks`.
+ */
+export const zh = {
+  page: {
+    title: "联盟网络",
+    description:
+      "接入联盟网络 API（Impact 等），定时拉取全量 offer 到本地暂存，供后续自动筛选。凭证以加密形式保存，绝不明文展示。",
+    newNetwork: "新建网络",
+    editNetwork: "编辑网络",
+    noCredentialsHint: "尚未配置 API 凭证 — 填写后才能拉取 offer。",
+  },
+  card: {
+    kind: "类型",
+    credentials: "凭证",
+    configured: "已配置",
+    notConfigured: "未配置",
+    lastPull: "上次拉取",
+    never: "从未拉取",
+    pullStatus: "拉取状态",
+    pullNow: "立即拉取",
+    pulling: "拉取中…",
+    viewOffers: "查看 Offer",
+    viewPulls: "拉取历史",
+    edit: "编辑",
+  },
+  status: {
+    NEVER: "从未",
+    RUNNING: "拉取中",
+    SUCCESS: "成功",
+    FAILED: "失败",
+  },
+  dialog: {
+    name: "名称",
+    namePlaceholder: "例如：Impact 主账号",
+    kind: "网络类型",
+    apiBaseUrl: "API 地址（可选）",
+    apiBaseUrlPlaceholder: "留空使用官方默认地址",
+    apiKey: "API Key",
+    apiKeyPlaceholder: "Impact 格式：AccountSID:AuthToken",
+    apiKeyHint: "保存时加密存储；编辑时留空则保持不变。",
+    clearCredentials: "清除已保存的凭证",
+    save: "保存",
+    saving: "保存中…",
+    cancel: "取消",
+  },
+  pulls: {
+    title: "拉取历史",
+    pulledAt: "拉取时间",
+    offerCount: "Offer 数",
+    newCount: "新增",
+    updatedCount: "更新",
+    status: "状态",
+    error: "错误",
+    empty: "暂无拉取记录。",
+  },
+  offers: {
+    title: "Offer 预览",
+    externalId: "网络 ID",
+    name: "名称",
+    payout: "佣金",
+    lastSeenAt: "最近拉取",
+    empty: "暂无 offer，先点击「立即拉取」。",
+  },
+  pager: {
+    prev: "上一页",
+    next: "下一页",
+    of: (page: number, totalPages: number) => `第 ${page} / ${totalPages} 页`,
+  },
+  toast: {
+    created: "网络已创建",
+    updated: "网络已更新",
+    pulled: (s: { offerCount: number; newCount: number; updatedCount: number }) =>
+      `拉取完成：共 ${s.offerCount} 个 offer，新增 ${s.newCount}，更新 ${s.updatedCount}。`,
+    failedPrefix: "操作失败：",
+  },
+};
+
+export const en = {
+  page: {
+    title: "Affiliate Networks",
+    description:
+      "Connect affiliate network APIs (Impact, …) and pull the full offer catalog into local staging for auto-screening. Credentials are stored encrypted and never shown in plaintext.",
+    newNetwork: "New network",
+    editNetwork: "Edit network",
+    noCredentialsHint: "No API credentials yet — fill them in to pull offers.",
+  },
+  card: {
+    kind: "Type",
+    credentials: "Credentials",
+    configured: "Configured",
+    notConfigured: "Not configured",
+    lastPull: "Last pull",
+    never: "Never",
+    pullStatus: "Pull status",
+    pullNow: "Pull now",
+    pulling: "Pulling…",
+    viewOffers: "View offers",
+    viewPulls: "Pull history",
+    edit: "Edit",
+  },
+  status: {
+    NEVER: "Never",
+    RUNNING: "Running",
+    SUCCESS: "Success",
+    FAILED: "Failed",
+  },
+  dialog: {
+    name: "Name",
+    namePlaceholder: "e.g. Impact main account",
+    kind: "Network kind",
+    apiBaseUrl: "API base URL (optional)",
+    apiBaseUrlPlaceholder: "Leave empty for the official default",
+    apiKey: "API key",
+    apiKeyPlaceholder: "Impact format: AccountSID:AuthToken",
+    apiKeyHint: "Encrypted at rest; leave empty when editing to keep the current key.",
+    clearCredentials: "Clear saved credentials",
+    save: "Save",
+    saving: "Saving…",
+    cancel: "Cancel",
+  },
+  pulls: {
+    title: "Pull history",
+    pulledAt: "Pulled at",
+    offerCount: "Offers",
+    newCount: "New",
+    updatedCount: "Updated",
+    status: "Status",
+    error: "Error",
+    empty: "No pull records yet.",
+  },
+  offers: {
+    title: "Offer preview",
+    externalId: "Network ID",
+    name: "Name",
+    payout: "Payout",
+    lastSeenAt: "Last seen",
+    empty: "No offers yet — click “Pull now” first.",
+  },
+  pager: {
+    prev: "Previous",
+    next: "Next",
+    of: (page: number, totalPages: number) => `Page ${page} of ${totalPages}`,
+  },
+  toast: {
+    created: "Network created",
+    updated: "Network updated",
+    pulled: (s: { offerCount: number; newCount: number; updatedCount: number }) =>
+      `Pull complete: ${s.offerCount} offers, ${s.newCount} new, ${s.updatedCount} updated.`,
+    failedPrefix: "Failed: ",
+  },
+};

@@ -42,6 +42,90 @@ export const WORKER_REGISTRY: readonly WorkerRegistryEntry[] = [
     processorExport: "processConversionUploadJob",
     entryPoint: "WorkerRuntime.start",
   },
+  {
+    queueName: QUEUE_NAMES.trafficMonitor,
+    processorModule: "traffic-monitor-worker.ts",
+    processorExport: "processTrafficMonitorJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.killSwitch,
+    processorModule: "kill-switch-worker.ts",
+    processorExport: "processKillSwitchJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.competitorWatch,
+    processorModule: "competitor-watch-worker.ts",
+    processorExport: "processCompetitorWatchJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.rotation,
+    processorModule: "rotation-worker.ts",
+    processorExport: "processRotationJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.deadLink,
+    processorModule: "dead-link-worker.ts",
+    processorExport: "processDeadLinkJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.payoutWatch,
+    processorModule: "payout-watch-worker.ts",
+    processorExport: "processPayoutWatchJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.budgetPacer,
+    processorModule: "budget-pacer-worker.ts",
+    processorExport: "processBudgetPacerJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.networkPull,
+    processorModule: "network-pull-worker.ts",
+    processorExport: "processNetworkPullJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.weeklyReport,
+    processorModule: "weekly-report-worker.ts",
+    processorExport: "processWeeklyReportJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.cashbackRateWatch,
+    processorModule: "cashback-rate-watch-worker.ts",
+    processorExport: "processCashbackRateWatchJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.cashbackTermsWatch,
+    processorModule: "cashback-terms-watch-worker.ts",
+    processorExport: "processCashbackTermsWatchJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.cashbackLpScore,
+    processorModule: "cashback-lp-score-worker.ts",
+    processorExport: "processCashbackLpScoreJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.cashbackRedirectCheck,
+    processorModule: "cashback-redirect-check-worker.ts",
+    processorExport: "processCashbackRedirectCheckJob",
+    entryPoint: "WorkerRuntime.start",
+  },
+  {
+    queueName: QUEUE_NAMES.cashbackRateCompare,
+    processorModule: "cashback-rate-compare-worker.ts",
+    processorExport: "processCashbackRateCompareJob",
+    entryPoint: "WorkerRuntime.start",
+  },
 ] as const;
 
 export interface QueueCatalogEntry {

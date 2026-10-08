@@ -1,0 +1,192 @@
+/**
+ * 功能2 — 自动化广告 API 客户端（server-side only）。
+ * 通过 sessionHeaders 转发用户 alk_session cookie；不记录密钥。
+ */
+import { redirect } from "next/navigation";
+import {
+  EntityApiError,
+  getApiBaseUrl,
+} from "./entities-config";
+import { sessionHeaders } from "./session";
+
+/* ---------- Types (mirror apps/api/src/ai/ad-generator.ts) ---------- */
+
+export type AdPlanDataQuality = "OBSERVED" | "PREDICTED" | "UNKNOWN";
+
+export interface AdPlanMoney {
+  amount: number;
+  currency: string;
+  dataQuality: AdPlanDataQuality;
+}
+
+export interface AdPlanKeyword {
+  text: string;
+  matchType: "EXACT" | "PHRASE" | "BROAD";
+  dataQuality: AdPlanDataQuality;
+}
+
+export interface AdPlanAdGroupBlock {
+  group: {
+    name: string;
+    finalUrl: string;
+    keywords: AdPlanKeyword[];
+    negativeKeywords: AdPlanKeyword[];
+    maxCpc: AdPlanMoney | null;
+    dataQuality: AdPlanDataQuality;
+  };
+  rsa: {
+    headlines: string[];
+    descriptions: string[];
+    finalUrl: string;
+    path1: string | null;
+    path2: string | null;
+    dataQuality: AdPlanDataQuality;
+  };
+}
+
+export interface AdPlan {
+  version: 1;
+  planId: string;
+  tenantId: string;
+  language: "zh" | "en";
+  sourceUrls: string[];
+  offerId: string | null;
+  googleAccountId: string | null;
+  campaign: {
+    name: string;
+    dailyBudget: AdPlanMoney;
+    geoTargets: string[];
+    bidding: { strategy: string; maxCpc: AdPlanMoney | null };
+    status: string;
+    dataQuality: AdPlanDataQuality;
+  };
+  adGroups: AdPlanAdGroupBlock[];
+  createdAt: string;
+  dataQuality: AdPlanDataQuality;
+}
+
+export interface AutoCreateResult {
+  planId: string;
+  plan: AdPlan;
+  expiresInSeconds: number;
+}
+
+export interface ConfirmResult {
+  planId: string;
+  targetId: string;
+  taskType: string;
+  status: string;
+  alreadyQueued: boolean;
+  integrationId?: string;
+  scriptUrl?: string;
+  copyPackUrl?: string;
+}
+
+export interface CreateCampaignScript {
+  planId: string;
+  fileName: string;
+  templateVersion: string;
+  source: string;
+}
+
+/* ---------- Transport ---------- */
+
+async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const base = getApiBaseUrl();
+  const authHeaders = await sessionHeaders();
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      ...init,
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders,
+        ...(init.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch {
+    throw new EntityApiError(0, "无法连接到 API 服务");
+  }
+  if (res.status === 401) redirect("/login");
+  if (!res.ok) {
+    let message = `请求失败（${res.status}）`;
+    try {
+      const body = (await res.json()) as { message?: string; error?: string };
+      message = body.message ?? body.error ?? message;
+    } catch {
+      /* ignore */
+    }
+    throw new EntityApiError(res.status, message);
+  }
+  return (await res.json()) as T;
+}
+
+async function apiFetchText(path: string): Promise<string> {
+  const base = getApiBaseUrl();
+  const authHeaders = await sessionHeaders();
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      headers: { ...authHeaders },
+      cache: "no-store",
+    });
+  } catch {
+    throw new EntityApiError(0, "无法连接到 API 服务");
+  }
+  if (res.status === 401) redirect("/login");
+  if (!res.ok) {
+    throw new EntityApiError(res.status, `请求失败（${res.status}）`);
+  }
+  return res.text();
+}
+
+/* ---------- API ---------- */
+
+export async function requestAdPlan(
+  urls: string[],
+  opts: { language?: "zh" | "en"; googleAccountId?: string } = {}
+): Promise<AutoCreateResult> {
+  return apiFetch<AutoCreateResult>("/api/v1/ads/auto-create", {
+    method: "POST",
+    body: JSON.stringify({
+      urls,
+      language: opts.language ?? "en",
+      googleAccountId: opts.googleAccountId || undefined,
+    }),
+  });
+}
+
+export async function confirmAdPlan(planId: string, maxCpc?: number): Promise<ConfirmResult> {
+  return apiFetch<ConfirmResult>("/api/v1/ads/auto-create/confirm", {
+    method: "POST",
+    body: JSON.stringify({ planId, maxCpc }),
+  });
+}
+
+export async function getCopyPackText(planId: string): Promise<string> {
+  return apiFetchText(
+    `/api/v1/ads/auto-create/${encodeURIComponent(planId)}/copy-pack`
+  );
+}
+
+export async function getCreateCampaignScript(
+  planId: string
+): Promise<CreateCampaignScript> {
+  return apiFetch<CreateCampaignScript>(
+    `/api/v1/ads/auto-create/${encodeURIComponent(planId)}/script`
+  );
+}
+
+/** 生成直链轮换 Script（方案 B）。 */
+export async function getRotationScript(
+  label: string
+): Promise<{ fileName: string; templateVersion: string; source: string }> {
+  return apiFetch<{ fileName: string; templateVersion: string; source: string }>(
+    "/api/v1/ads/rotation-script",
+    {
+      method: "POST",
+      body: JSON.stringify({ label }),
+    }
+  );
+}

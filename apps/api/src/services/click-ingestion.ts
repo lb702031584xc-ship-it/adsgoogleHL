@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  AdGroupCriterionRepository,
   AttributionContext,
   Click,
   ClickRepository,
@@ -18,6 +19,7 @@ import {
   normalizeRequestMetadata,
   TrackingLinkResolver,
 } from "@adlinklab/tracking";
+import { TrafficEventService } from "./traffic-events.js";
 
 export interface ClickAuditWriter {
   record(input: {
@@ -52,6 +54,11 @@ export interface RecordClickInput {
   /** Explicit ingestion idempotency key — same key returns first Click */
   ingestionId?: string;
   requestId?: string;
+  /**
+   * Real inbound request URL (e.g. the /t/:publicId URL). Optional —
+   * recorded as the AD_CLICK destination when present, left empty otherwise.
+   */
+  requestUrl?: string;
 }
 
 /**
@@ -62,7 +69,14 @@ export class ClickIngestionService {
   constructor(
     private readonly resolver: TrackingLinkResolver,
     private readonly clicks: ClickRepository,
-    private readonly unitOfWork: UnitOfWork
+    private readonly unitOfWork: UnitOfWork,
+    /**
+     * Phase 2 — traffic event journal (optional). Best-effort only:
+     * event writes never change the Click result or throw into it.
+     */
+    private readonly trafficEvents?: TrafficEventService,
+    /** Optional — enables real criterion matchType lookup for Click.matchType. */
+    private readonly adGroupCriteria?: AdGroupCriterionRepository
   ) {}
 
   async recordClick(input: RecordClickInput): Promise<ClickResult> {
@@ -113,6 +127,11 @@ export class ClickIngestionService {
 
     const clickUuid = randomUUID();
     const occurredAt = input.occurredAt ?? new Date();
+    // Phase 2 — real criterion matchType only; null when unknown, never invented.
+    const matchType = await this.resolveMatchType(
+      tenantId,
+      resolved.attribution.criterionId
+    );
 
     try {
       const click = await this.unitOfWork.transaction(async (ctx) => {
@@ -143,6 +162,9 @@ export class ClickIngestionService {
           utmCampaign: trackingParams.utmCampaign,
           utmTerm: trackingParams.utmTerm,
           utmContent: trackingParams.utmContent,
+          trafficSource: trackingParams.utmSource ?? undefined,
+          trafficMedium: trackingParams.utmMedium ?? undefined,
+          matchType,
           userAgent: metadata.userAgent,
           ipAddress: metadata.ipAddress,
           referer: metadata.referer,
@@ -153,7 +175,7 @@ export class ClickIngestionService {
       });
 
       const replayed = click.id !== clickUuid;
-      return {
+      const result: ClickResult = {
         clickId: click.clickId,
         trackingLinkId: click.trackingLinkId,
         offerId: click.offerId ?? resolved.offer.id,
@@ -163,6 +185,24 @@ export class ClickIngestionService {
         replayed,
         click,
       };
+
+      if (!replayed && this.trafficEvents) {
+        // Phase 2 — traffic event journal. Best-effort: failures are logged
+        // inside the service and never affect the click result above.
+        await this.trafficEvents.emitClickChain({
+          tenantId,
+          clickId: click.id,
+          trackingLinkId: click.trackingLinkId,
+          timestamp: occurredAt,
+          referer: metadata.referer ?? null,
+          requestUrl: input.requestUrl ?? null,
+          landingPageId: click.landingPageId ?? null,
+          landingPageUrl: resolved.landingPage.url,
+          redirectUrl: result.redirectUrl,
+        });
+      }
+
+      return result;
     } catch (error) {
       if (error instanceof ConflictError && input.ingestionId) {
         const existing = await this.clicks.findByIngestionIdForTenant(
@@ -190,6 +230,26 @@ export class ClickIngestionService {
     const click = await this.clicks.findByIdForTenant(tenantId, id);
     if (!click) throw new NotFoundError("Click", id);
     return click;
+  }
+
+  /**
+   * Phase 2 — best-effort real criterion matchType lookup.
+   * Returns undefined when unknown; never throws, never invents a value.
+   */
+  private async resolveMatchType(
+    tenantId: string,
+    criterionId: string | null
+  ): Promise<string | undefined> {
+    if (!criterionId || !this.adGroupCriteria) return undefined;
+    try {
+      const criterion = await this.adGroupCriteria.findByIdForTenant(
+        tenantId,
+        criterionId
+      );
+      return criterion?.matchType ?? undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   list(tenantId: string, page?: number, pageSize?: number) {

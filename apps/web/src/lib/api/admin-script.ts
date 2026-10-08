@@ -1,11 +1,13 @@
 /**
  * Phase 8.4.9 — Script Integration Admin API client (server-side).
+ * Forwards the user's `alk_session` cookie to the API (see ./session).
  */
+import { redirect } from "next/navigation";
 import {
-  getAdminApiKey,
   getApiBaseUrl,
   AdminScriptConfigError,
 } from "./admin-script-config";
+import { sessionHeaders } from "./session";
 
 export interface AdminIntegration {
   integrationId: string;
@@ -61,16 +63,17 @@ async function adminFetch<T>(
   init: RequestInit = {}
 ): Promise<T> {
   const base = getApiBaseUrl();
-  const key = getAdminApiKey();
+  const authHeaders = await sessionHeaders();
   const res = await fetch(`${base}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
-      "x-api-key": key,
+      ...authHeaders,
       ...(init.headers ?? {}),
     },
     cache: "no-store",
   });
+  if (res.status === 401) redirect("/login");
   if (!res.ok) {
     let message = `Admin API ${res.status}`;
     try {

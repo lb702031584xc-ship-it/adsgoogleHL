@@ -35,6 +35,14 @@ import type { DashboardQueryService } from "../services/dashboard-query-service.
 import type { ScriptIntegrationAdminService } from "../services/script-integration-admin-service.js";
 import { registerScriptRoutes } from "./script.js";
 import { registerDashboardRoutes } from "./dashboard.js";
+import { registerDeadLinkRoutes } from "./dead-link.js";
+import { registerSearchTermRoutes } from "./search-terms.js";
+import { registerPayoutWatchRoutes } from "./payout-watch.js";
+import { registerBudgetRuleRoutes } from "./budget-rules.js";
+import { registerLpOptimizationRoutes } from "./lp-optimization.js";
+import { registerNetworkRoutes } from "./networks.js";
+import { registerLpRewriterRoutes } from "./lp-rewriter.js";
+import { registerWeeklyReportRoutes } from "./weekly-reports.js";
 import { registerAdminScriptIntegrationRoutes } from "./admin-script-integrations.js";
 import type {
   WorkerHealth,
@@ -43,9 +51,34 @@ import type {
 import {
   assertAuthConfigured,
   createAuthContext,
+  registerSessionAuthHook,
   requireTenant,
   type AuthContext,
 } from "../auth/tenant.js";
+import { registerAuthRoutes } from "./auth.js";
+import { registerAiRoutes } from "./ai.js";
+import { registerMonitoringRoutes } from "./monitoring.js";
+import { registerOfferIntelRoutes } from "./offer-intel.js";
+import { registerTrafficIntelRoutes } from "./traffic-intel.js";
+import { registerKillSwitchRoutes } from "./kill-switch.js";
+import { registerExperimentRoutes } from "./experiments.js";
+import { registerBudgetRoutes } from "./budget.js";
+import { registerStatsRoutes } from "./stats.js";
+import { registerLinkSwapRoutes } from "./link-swap.js";
+import { registerLaunchRoutes } from "./launch.js";
+import { registerCampaignToggleRoutes } from "./campaign-toggle.js";
+import { registerAdsAutoRoutes } from "./ads-auto.js";
+import { registerCashbackRoutes } from "./cashback.js";
+import { registerCashbackRateWatchRoutes } from "./cashback-rate-watch.js";
+import { registerCashbackTermsWatchRoutes } from "./cashback-terms-watch.js";
+import { registerCashbackLpScoreRoutes } from "./cashback-lp-score.js";
+import { registerCashbackRedirectCheckRoutes } from "./cashback-redirect-check.js";
+import { registerCashbackRateCompareRoutes } from "./cashback-rate-compare.js";
+import { registerTestClickRoutes } from "./test-click.js";
+import { registerResearcherIsolation } from "../auth/researcher.js";
+import { registerResearchRoutes } from "./research.js";
+import { registerStrategyRoutes } from "./strategy.js";
+import { registerLanderIntelRoutes } from "./lander-intel.js";
 import {
   evaluateReadiness,
   httpMetrics,
@@ -150,6 +183,54 @@ export async function registerRoutes(
       .type("text/plain; version=0.0.4; charset=utf-8")
       .send(httpMetrics.renderPrometheus());
   });
+
+  /** Phase 10 — login sessions ride alongside API-key auth (no-op without prisma). */
+  registerSessionAuthHook(app, services.prisma);
+  if (services.prisma) {
+    // Phase 4 iron rule: researcher isolation hook must be registered BEFORE
+    // all other routes (onRequest only applies to subsequently registered routes).
+    registerResearcherIsolation(app, { prisma: services.prisma });
+    await registerAuthRoutes(app, { prisma: services.prisma });
+    await registerAiRoutes(app, { prisma: services.prisma });
+    await registerMonitoringRoutes(app, { prisma: services.prisma });
+    await registerOfferIntelRoutes(app, { prisma: services.prisma });
+    await registerTrafficIntelRoutes(app, { prisma: services.prisma });
+    await registerKillSwitchRoutes(app, { prisma: services.prisma });
+    await registerExperimentRoutes(app, { prisma: services.prisma });
+    await registerBudgetRoutes(app, { prisma: services.prisma });
+    await registerResearchRoutes(app, { prisma: services.prisma });
+    await registerStrategyRoutes(app, { prisma: services.prisma });
+    await registerLanderIntelRoutes(app, { prisma: services.prisma });
+    await registerStatsRoutes(app, { prisma: services.prisma });
+    await registerLinkSwapRoutes(app, { prisma: services.prisma });
+    await registerLaunchRoutes(app, { prisma: services.prisma });
+    await registerCampaignToggleRoutes(app, { prisma: services.prisma });
+    await registerAdsAutoRoutes(app, { prisma: services.prisma });
+    await registerCashbackRoutes(app, { prisma: services.prisma });
+    await registerTestClickRoutes(app, { prisma: services.prisma });
+    // Automation pack (2026-10-07): per-feature route modules
+    // (inside if (services.prisma) so prisma is non-optional here)
+    const prismaOnly = { prisma: services.prisma };
+    await registerDeadLinkRoutes(app, prismaOnly, auth);
+    await registerSearchTermRoutes(app, prismaOnly, auth);
+    await registerPayoutWatchRoutes(app, prismaOnly, auth);
+    await registerBudgetRuleRoutes(app, prismaOnly, auth);
+    await registerLpOptimizationRoutes(app, services, auth);
+    await registerNetworkRoutes(app, prismaOnly, auth);
+    await registerWeeklyReportRoutes(app, prismaOnly, auth);
+    await registerLpRewriterRoutes(app, { prisma: services.prisma, auth });
+    // Cashback automation pack (2026-10-08)
+    await registerCashbackRateWatchRoutes(app, { prisma: services.prisma });
+    await registerCashbackTermsWatchRoutes(app, { prisma: services.prisma });
+    await registerCashbackLpScoreRoutes(app, { prisma: services.prisma });
+    await registerCashbackRedirectCheckRoutes(app, { prisma: services.prisma });
+    await registerCashbackRateCompareRoutes(app, { prisma: services.prisma });
+    // Amazon 自动选品 (2026-10-08)
+    const { registerAmazonDiscoveryRoutes } = await import(
+      "./amazon-discovery.js"
+    );
+    registerAmazonDiscoveryRoutes(app, { prisma: services.prisma });
+  }
 
   app.get<{
     Headers: { "x-tenant-id"?: string };
@@ -827,6 +908,45 @@ export async function registerRoutes(
     );
   });
 
+  app.post<{
+    Headers: { "x-tenant-id"?: string };
+    Body: {
+      name?: unknown;
+      customerId?: unknown;
+      currency?: unknown;
+      timezone?: unknown;
+    };
+  }>("/api/v1/google-accounts", async (request) => {
+    const tenantId = tenantOf(request);
+    const auth = request.auth;
+    const userId =
+      auth && "kind" in auth && auth.kind === "session" ? auth.userId : "";
+    const body = request.body ?? {};
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const customerId =
+      typeof body.customerId === "string"
+        ? body.customerId.replace(/-/g, "").trim()
+        : "";
+    if (!name) throw new ValidationError("name is required");
+    if (!customerId) throw new ValidationError("customerId is required");
+    const currency =
+      typeof body.currency === "string" && body.currency.trim()
+        ? body.currency.trim().toUpperCase()
+        : "USD";
+    const timezone =
+      typeof body.timezone === "string" && body.timezone.trim()
+        ? body.timezone.trim()
+        : "America/Los_Angeles";
+    return services.googleAccounts.create({
+      tenantId,
+      userId,
+      name,
+      customerId,
+      currency,
+      timezone,
+    });
+  });
+
   app.get<{
     Params: { id: string };
     Headers: { "x-tenant-id"?: string };
@@ -877,6 +997,6 @@ export async function registerRoutes(
   });
 
   await registerScriptRoutes(app, services);
-  await registerDashboardRoutes(app, services);
+  await registerDashboardRoutes(app, services, auth);
   await registerAdminScriptIntegrationRoutes(app, services, auth);
 }

@@ -207,7 +207,7 @@ describe("Phase 9.1 migration command availability", () => {
     expect(compose).not.toMatch(/prisma db push/);
   });
 
-  it("15. migration count unchanged (no new Phase 9.1 schema migration)", () => {
+  it("15. migration count is 21 (Phase 10 auth + Phase 11 AI + P1 traffic monitor + Phase 1 offer intel + Phase 2 traffic intel + Phase 3 optimization + Phase 4 research lab + Lander Intel + automation + automation-pack + launch wizard + lp rewriter + weekly report + network api + cashback automation pack migrations; no other new schema migration)", () => {
     const migrationsDir = join(
       REPO_ROOT,
       "packages/database/prisma/migrations"
@@ -216,7 +216,20 @@ describe("Phase 9.1 migration command availability", () => {
     const names = readdirSync(migrationsDir).filter((n) =>
       existsSync(join(migrationsDir, n, "migration.sql"))
     );
-    expect(names.length).toBe(6);
+    expect(names.length).toBe(21);
+    expect(names).toContain("20261003130000_auth_users_sessions");
+    expect(names).toContain("20261003140000_ai_offer_analysis");
+    expect(names).toContain("20261004040000_p1_monitoring");
+    expect(names).toContain("20261005060000_phase1_offer_intel");
+    expect(names).toContain("20261005070000_phase2_traffic_intel");
+    expect(names).toContain("20261005080000_phase3_optimization");
+    expect(names).toContain("20261005090000_phase4_research_lab");
+    expect(names).toContain("20261005100000_lander_intel");
+    expect(names).toContain("20261007020100_launch_wizard");
+    expect(names).toContain("20261007020200_lp_rewriter");
+    expect(names).toContain("20261007020300_weekly_report");
+    expect(names).toContain("20261007020400_network_api");
+    expect(names).toContain("20261008010000_cashback_auto");
   });
 });
 

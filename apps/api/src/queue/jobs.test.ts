@@ -7,10 +7,24 @@ describe("queue job definitions", () => {
     expect(names).toEqual(
       [
         "analyticsAggregation",
+        "budgetPacer",
+        "cashbackLpScore",
+        "cashbackRateCompare",
+        "cashbackRateWatch",
+        "cashbackRedirectCheck",
+        "cashbackTermsWatch",
         "clickProcessing",
+        "competitorWatch",
         "conversionUpload",
+        "deadLink",
         "googleAdsSync",
+        "killSwitch",
+        "networkPull",
+        "payoutWatch",
+        "rotation",
+        "trafficMonitor",
         "urlChange",
+        "weeklyReport",
       ].sort()
     );
   });

@@ -268,15 +268,21 @@ This project has **no** production Google Ads mutation capability. Do not add li
 
 ---
 
-## 11. Traefik / TLS Lab Limitation
+## 11. Traefik / TLS
 
-**LAB-ONLY (accurate today):**
+**Production deploy (`deploy.sh`):**
 
-- Entry point HTTP `:80` only (no TLS redesign)
+- Entrypoints `:80` (web) + `:443` (websecure); all HTTP redirects to HTTPS
+  (ACME HTTP-01 challenge path excluded)
+- Let's Encrypt via Traefik ACME HTTP challenge; certificates stored in
+  `infra/traefik/acme.json` (mode 600, created by `deploy.sh`)
+- Configure via `.env`: `DOMAIN`, `ACME_EMAIL`
 - Dashboard **off by default**; set `TRAEFIK_DASHBOARD=true` to enable dashboard + insecure API
 - Dashboard published on **loopback only**: `127.0.0.1:8080:8080`
 
-Do **not** treat this as production TLS.
+**Lab note:** without `DOMAIN`/`ACME_EMAIL` (plain `docker compose up` with the
+example env), the TLS routers have no valid domain — the lab baseline remains
+HTTP `:80`.
 
 ---
 

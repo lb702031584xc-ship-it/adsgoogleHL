@@ -4,34 +4,36 @@ import type { DashboardSyncLog } from "@/lib/api/dashboard-types";
 import { ExecutionBadge } from "@/components/dashboard/status-badges";
 import { TruncateId, formatTimestamp } from "@/components/dashboard/format";
 import { EmptyState } from "@/components/dashboard/states";
+import { useDict } from "@/i18n/use-dict";
 
 export function LogsTable({
   logs,
-  emptyMessage = "No sync logs yet.",
+  emptyMessage,
 }: {
   logs: DashboardSyncLog[];
   emptyMessage?: string;
 }) {
+  const t = useDict();
   if (logs.length === 0) {
-    return <EmptyState message={emptyMessage} />;
+    return <EmptyState message={emptyMessage ?? t.dashboard.logsTable.empty} />;
   }
 
   return (
     <div className="overflow-x-auto rounded-xl border border-ink/10 bg-white/80 shadow-sm">
       <table className="min-w-full text-left text-sm">
-        <caption className="sr-only">Sync logs</caption>
+        <caption className="sr-only">{t.dashboard.logsTable.caption}</caption>
         <thead className="border-b border-ink/10 bg-mist/60 text-xs uppercase tracking-wide text-ink/55">
           <tr>
-            <th className="px-3 py-3 font-semibold">Log ID</th>
-            <th className="px-3 py-3 font-semibold">Target</th>
-            <th className="px-3 py-3 font-semibold">Desired</th>
-            <th className="px-3 py-3 font-semibold">Reported</th>
-            <th className="px-3 py-3 font-semibold">Status</th>
-            <th className="px-3 py-3 font-semibold">Conflict</th>
-            <th className="px-3 py-3 font-semibold">Execution</th>
-            <th className="px-3 py-3 font-semibold">Before → After</th>
-            <th className="px-3 py-3 font-semibold">Message</th>
-            <th className="px-3 py-3 font-semibold">Created</th>
+            <th className="px-3 py-3 font-semibold">{t.dashboard.logsTable.columns.logId}</th>
+            <th className="px-3 py-3 font-semibold">{t.dashboard.logsTable.columns.target}</th>
+            <th className="px-3 py-3 font-semibold">{t.dashboard.logsTable.columns.desired}</th>
+            <th className="px-3 py-3 font-semibold">{t.dashboard.logsTable.columns.reported}</th>
+            <th className="px-3 py-3 font-semibold">{t.dashboard.logsTable.columns.status}</th>
+            <th className="px-3 py-3 font-semibold">{t.dashboard.logsTable.columns.conflict}</th>
+            <th className="px-3 py-3 font-semibold">{t.dashboard.logsTable.columns.execution}</th>
+            <th className="px-3 py-3 font-semibold">{t.dashboard.logsTable.columns.beforeAfter}</th>
+            <th className="px-3 py-3 font-semibold">{t.dashboard.logsTable.columns.message}</th>
+            <th className="px-3 py-3 font-semibold">{t.dashboard.logsTable.columns.created}</th>
           </tr>
         </thead>
         <tbody>
@@ -91,11 +93,10 @@ export function LogsPagination({
   onNext: () => void;
   disabled?: boolean;
 }) {
+  const t = useDict();
   return (
     <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-ink/70">
-      <p>
-        Page {page} · {pageSize} per page · {total} total
-      </p>
+      <p>{t.dashboard.logsTable.pageInfo(page, pageSize, total)}</p>
       <div className="flex gap-2">
         <button
           type="button"
@@ -103,7 +104,7 @@ export function LogsPagination({
           disabled={disabled || page <= 1}
           className="rounded-md border border-ink/15 px-3 py-1.5 text-xs font-semibold text-ink enabled:hover:bg-mist disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-signal"
         >
-          Previous
+          {t.common.pagination.previous}
         </button>
         <button
           type="button"
@@ -111,7 +112,7 @@ export function LogsPagination({
           disabled={disabled || !hasNext}
           className="rounded-md border border-ink/15 px-3 py-1.5 text-xs font-semibold text-ink enabled:hover:bg-mist disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-signal"
         >
-          Next
+          {t.common.pagination.next}
         </button>
       </div>
     </div>

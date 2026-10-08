@@ -7,21 +7,31 @@ services:
     image: traefik:v3.2
     container_name: adlinklab-traefik
     command:
-      - --providers.docker=true
-      - --providers.docker.exposedbydefault=false
+      # NOTE: the Docker provider is intentionally OFF. Newer Docker daemons
+      # (API >= 1.40) reject traefik v3.2's docker client (API 1.24), so all
+      # routing is declared via the file provider in infra/traefik/.
+      - --providers.docker=false
       - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
       # Dashboard + insecure API: off by default. Lab only: TRAEFIK_DASHBOARD=true
       - --api.dashboard=${TRAEFIK_DASHBOARD:-false}
       - --api.insecure=${TRAEFIK_DASHBOARD:-false}
+      # Let's Encrypt (HTTP-01 challenge served on the web entrypoint)
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL:?Set ACME_EMAIL in .env}
+      - --certificatesresolvers.le.acme.storage=/acme.json
     ports:
       - "80:80"
+      - "443:443"
       # Dashboard port bound to loopback only (lab). Useless unless TRAEFIK_DASHBOARD=true.
       - "127.0.0.1:8080:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./infra/traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
+      - ./infra/traefik/routers.yml:/etc/traefik/dynamic/routers.yml:ro
+      - ./infra/traefik/acme.json:/acme.json
     networks:
       - adlinklab
 
@@ -128,11 +138,6 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.api.rule=Host(`api.localhost`) || PathPrefix(`/api`) || PathPrefix(`/health`)
-      - traefik.http.routers.api.entrypoints=web
-      - traefik.http.services.api.loadbalancer.server.port=3001
     networks:
       - adlinklab
 
@@ -195,11 +200,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.web.rule=Host(`localhost`) || Host(`web.localhost`)
-      - traefik.http.routers.web.entrypoints=web
-      - traefik.http.services.web.loadbalancer.server.port=3000
     networks:
       - adlinklab
 

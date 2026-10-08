@@ -16,10 +16,40 @@ export const QUEUE_NAMES = {
   conversionUpload: "conversionUpload",
   clickProcessing: "clickProcessing",
   analyticsAggregation: "analyticsAggregation",
+  trafficMonitor: "trafficMonitor",
+  killSwitch: "killSwitch",
+  competitorWatch: "competitorWatch",
+  rotation: "rotation",
+  deadLink: "deadLink",
+  payoutWatch: "payoutWatch",
+  budgetPacer: "budgetPacer",
+  networkPull: "networkPull",
+  weeklyReport: "weeklyReport",
+  cashbackRateWatch: "cashbackRateWatch",
+  cashbackTermsWatch: "cashbackTermsWatch",
+  cashbackLpScore: "cashbackLpScore",
+  cashbackRedirectCheck: "cashbackRedirectCheck",
+  cashbackRateCompare: "cashbackRateCompare",
 } as const satisfies Record<SyncJobType, string>;
 
 /** Queues with real Worker + Processor (Phase 9.6). Names must stay stable. */
-export type ImplementedQueueName = "urlChange" | "conversionUpload";
+export type ImplementedQueueName =
+  | "urlChange"
+  | "conversionUpload"
+  | "trafficMonitor"
+  | "killSwitch"
+  | "competitorWatch"
+  | "rotation"
+  | "deadLink"
+  | "payoutWatch"
+  | "budgetPacer"
+  | "networkPull"
+  | "weeklyReport"
+  | "cashbackRateWatch"
+  | "cashbackTermsWatch"
+  | "cashbackLpScore"
+  | "cashbackRedirectCheck"
+  | "cashbackRateCompare";
 
 export interface JobDefinition {
   name: SyncJobType;
@@ -72,6 +102,104 @@ export const JOB_DEFINITIONS: JobDefinition[] = [
     backoffDelayMs: 1_000,
     backoffType: "exponential",
   },
+  {
+    name: "trafficMonitor",
+    queueName: QUEUE_NAMES.trafficMonitor,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "killSwitch",
+    queueName: QUEUE_NAMES.killSwitch,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "competitorWatch",
+    queueName: QUEUE_NAMES.competitorWatch,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "rotation",
+    queueName: QUEUE_NAMES.rotation,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "deadLink",
+    queueName: QUEUE_NAMES.deadLink,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "payoutWatch",
+    queueName: QUEUE_NAMES.payoutWatch,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "budgetPacer",
+    queueName: QUEUE_NAMES.budgetPacer,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "networkPull",
+    queueName: QUEUE_NAMES.networkPull,
+    defaultAttempts: 3,
+    backoffDelayMs: 5_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "weeklyReport",
+    queueName: QUEUE_NAMES.weeklyReport,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "cashbackRateWatch",
+    queueName: QUEUE_NAMES.cashbackRateWatch,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "cashbackTermsWatch",
+    queueName: QUEUE_NAMES.cashbackTermsWatch,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "cashbackLpScore",
+    queueName: QUEUE_NAMES.cashbackLpScore,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "cashbackRedirectCheck",
+    queueName: QUEUE_NAMES.cashbackRedirectCheck,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "cashbackRateCompare",
+    queueName: QUEUE_NAMES.cashbackRateCompare,
+    defaultAttempts: 3,
+    backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
 ];
 
 export function createRedisConnection(): ConnectionOptions {
@@ -91,6 +219,20 @@ export function createQueues(
   return {
     urlChange: new Queue(QUEUE_NAMES.urlChange, { connection }),
     conversionUpload: new Queue(QUEUE_NAMES.conversionUpload, { connection }),
+    trafficMonitor: new Queue(QUEUE_NAMES.trafficMonitor, { connection }),
+    killSwitch: new Queue(QUEUE_NAMES.killSwitch, { connection }),
+    competitorWatch: new Queue(QUEUE_NAMES.competitorWatch, { connection }),
+    rotation: new Queue(QUEUE_NAMES.rotation, { connection }),
+    deadLink: new Queue(QUEUE_NAMES.deadLink, { connection }),
+    payoutWatch: new Queue(QUEUE_NAMES.payoutWatch, { connection }),
+    budgetPacer: new Queue(QUEUE_NAMES.budgetPacer, { connection }),
+    networkPull: new Queue(QUEUE_NAMES.networkPull, { connection }),
+    weeklyReport: new Queue(QUEUE_NAMES.weeklyReport, { connection }),
+    cashbackRateWatch: new Queue(QUEUE_NAMES.cashbackRateWatch, { connection }),
+    cashbackTermsWatch: new Queue(QUEUE_NAMES.cashbackTermsWatch, { connection }),
+    cashbackLpScore: new Queue(QUEUE_NAMES.cashbackLpScore, { connection }),
+    cashbackRedirectCheck: new Queue(QUEUE_NAMES.cashbackRedirectCheck, { connection }),
+    cashbackRateCompare: new Queue(QUEUE_NAMES.cashbackRateCompare, { connection }),
   };
 }
 

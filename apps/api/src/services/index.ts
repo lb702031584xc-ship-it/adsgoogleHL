@@ -42,6 +42,30 @@ export class GoogleAccountService {
   getById(id: string) {
     return this.googleAccounts.findById(id);
   }
+  async create(input: {
+    tenantId: string;
+    userId: string;
+    name: string;
+    customerId: string;
+    currency: string;
+    timezone: string;
+  }) {
+    const { randomUUID } = await import("node:crypto");
+    return this.googleAccounts.create({
+      id: randomUUID(),
+      tenantId: input.tenantId,
+      userId: input.userId,
+      name: input.name,
+      descriptiveName: input.name,
+      customerId: input.customerId,
+      googleCustomerId: input.customerId,
+      currency: input.currency,
+      currencyCode: input.currency,
+      timezone: input.timezone,
+      timeZone: input.timezone,
+      status: "ACTIVE",
+    });
+  }
 
   /**
    * Read-only provider/account status — no secrets, no mutations.

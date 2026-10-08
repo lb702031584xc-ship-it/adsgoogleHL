@@ -15,7 +15,21 @@ export type SyncJobType =
   | "urlChange"
   | "conversionUpload"
   | "clickProcessing"
-  | "analyticsAggregation";
+  | "analyticsAggregation"
+  | "trafficMonitor"
+  | "killSwitch"
+  | "competitorWatch"
+  | "rotation"
+  | "deadLink"
+  | "payoutWatch"
+  | "budgetPacer"
+  | "weeklyReport"
+  | "networkPull"
+  | "cashbackRateWatch"
+  | "cashbackTermsWatch"
+  | "cashbackLpScore"
+  | "cashbackRedirectCheck"
+  | "cashbackRateCompare";
 
 export interface PaginationInput {
   page?: number;

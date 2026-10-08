@@ -161,46 +161,108 @@ enum ScriptExecutionResult {
   NO_CHANGE
 }
 
+/// Phase 2 Traffic Intelligence — traffic event journal event types.
+/// Events are always observed data (dataQuality = OBSERVED) — never invented.
+enum TrafficEventType {
+  AD_CLICK
+  LANDING_PAGE_VIEW
+  AFFILIATE_CLICK
+  MERCHANT_VISIT
+  CONVERSION
+  COMMISSION
+}
+
 // ---------------------------------------------------------------------------
 // Tenant boundary
 // ---------------------------------------------------------------------------
 
 model Tenant {
-  id        String    @id @db.Uuid
-  name      String
-  slug      String    @unique
-  status    UserStatus @default(ACTIVE)
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
-  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(3)
+  id         String     @id @db.Uuid
+  name       String
+  slug       String     @unique
+  status     UserStatus @default(ACTIVE)
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt DateTime?  @map("archived_at") @db.Timestamptz(3)
+  deletedAt  DateTime?  @map("deleted_at") @db.Timestamptz(3)
 
-  users          User[]
-  googleAccounts GoogleAccount[]
-  offers         Offer[]
-  orders         Order[]
-  scriptIntegrations GoogleAdsScriptIntegration[]
+  users                 User[]
+  googleAccounts        GoogleAccount[]
+  offers                Offer[]
+  orders                Order[]
+  scriptIntegrations    GoogleAdsScriptIntegration[]
+  /// Phase 1 Offer Intelligence back-references (additive)
+  merchants             Merchant[]
+  affiliateNetworks     AffiliateNetwork[]
+  networkOfferPulls     NetworkOfferPull[]
+  networkOffers         NetworkOffer[]
+  offerPolicies         OfferPolicy[]
+  policyEvidence        PolicyEvidence[]
+  offerRiskScores       OfferRiskScore[]
+  profitModels          ProfitModel[]
+  /// Phase 2 Traffic Intelligence back-reference (additive)
+  trafficEvents         TrafficEvent[]
+  /// Phase 3 Optimization back-references (additive)
+  experiments           Experiment[]
+  killSwitchConfigs     KillSwitchConfig[]
+  killSwitchEvents      KillSwitchEvent[]
+  /// Phase 4 Research Lab back-references (additive)
+  researchTests         ResearchTest[]
+  researchResponses     ResearchResponse[]
+  cloakingFindings      CloakingFinding[]
+  landerAnalyses        LanderAnalysis[]
+  competitorWatches     CompetitorWatch[]
+  competitorChanges     CompetitorChange[]
+  /// Automation — cashback offers + rotation groups (additive)
+  cashbackOffers        CashbackOffer[]
+  rotationGroups        RotationGroup[]
+  /// Launch Wizard back-reference (additive)
+  launchChecklists      LaunchChecklist[]
+  cashbackRateChecks    CashbackRateCheck[]
+  cashbackTermsWatches  CashbackTermsWatch[]
+  redirectChainChecks   RedirectChainCheck[]
+  cashbackCompareGroups CashbackCompareGroup[]
+  cashbackRateSnapshots CashbackRateSnapshot[]
 
   @@map("tenants")
 }
 
 model User {
-  id        String     @id @db.Uuid
-  tenantId  String     @map("tenant_id") @db.Uuid
-  email     String
-  name      String
-  status    UserStatus @default(ACTIVE)
-  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
-  archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
-  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(3)
+  id           String     @id @db.Uuid
+  tenantId     String     @map("tenant_id") @db.Uuid
+  email        String
+  name         String
+  /// scrypt password hash (`scrypt$<saltHex>$<hashHex>`) — null for fixture/seed users
+  passwordHash String?    @map("password_hash")
+  /// 'admin' | 'member' | 'researcher' (Phase 4: researcher is API-isolated to /api/v1/research/*)
+  role         String     @default("member") @map("role")
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt   DateTime?  @map("archived_at") @db.Timestamptz(3)
+  deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz(3)
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id])
   googleAccounts GoogleAccount[]
+  sessions       Session[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
   @@map("users")
+}
+
+/// Opaque login sessions — only the SHA-256 hash of the token is stored.
+model Session {
+  id        String   @id @db.Uuid
+  tokenHash String   @unique @map("token_hash")
+  userId    String   @map("user_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
 }
 
 /// Google Ads customer account. OAuth secrets are NEVER stored here —
@@ -222,9 +284,9 @@ model GoogleAccount {
   archivedAt         DateTime?     @map("archived_at") @db.Timestamptz(3)
   deletedAt          DateTime?     @map("deleted_at") @db.Timestamptz(3)
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  user      User       @relation(fields: [userId], references: [id])
-  campaigns Campaign[]
+  tenant             Tenant                       @relation(fields: [tenantId], references: [id])
+  user               User                         @relation(fields: [userId], references: [id])
+  campaigns          Campaign[]
   scriptIntegrations GoogleAdsScriptIntegration[]
 
   @@unique([customerId])
@@ -269,9 +331,9 @@ model AdGroup {
   archivedAt      DateTime?     @map("archived_at") @db.Timestamptz(3)
   deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(3)
 
-  campaign Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
-  ads      Ad[]
-  criteria AdGroupCriterion[]
+  campaign      Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  ads           Ad[]
+  criteria      AdGroupCriterion[]
   trackingLinks TrackingLink[]
 
   @@unique([campaignId, googleAdGroupId])
@@ -281,14 +343,14 @@ model AdGroup {
 }
 
 model Ad {
-  id         String   @id @db.Uuid
-  tenantId   String   @map("tenant_id") @db.Uuid
-  adGroupId  String   @map("ad_group_id") @db.Uuid
-  googleAdId String   @map("google_ad_id")
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  adGroupId  String    @map("ad_group_id") @db.Uuid
+  googleAdId String    @map("google_ad_id")
   name       String
-  status     AdStatus @default(ACTIVE)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  status     AdStatus  @default(ACTIVE)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
   deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(3)
 
@@ -314,7 +376,7 @@ model AdGroupCriterion {
   archivedAt        DateTime?       @map("archived_at") @db.Timestamptz(3)
   deletedAt         DateTime?       @map("deleted_at") @db.Timestamptz(3)
 
-  adGroup AdGroup @relation(fields: [adGroupId], references: [id], onDelete: Restrict)
+  adGroup       AdGroup        @relation(fields: [adGroupId], references: [id], onDelete: Restrict)
   trackingLinks TrackingLink[]
 
   @@unique([adGroupId, googleCriterionId])
@@ -336,15 +398,35 @@ model Offer {
   endsAt           DateTime?   @map("ends_at") @db.Timestamptz(3)
   idempotencyScope String?     @map("idempotency_scope")
   idempotencyKey   String?     @map("idempotency_key")
+  /// Phase 1 Offer Intelligence — nullable additions only (additive)
+  merchantId       String?     @map("merchant_id") @db.Uuid
+  category         String?
+  geoAllow         String[]    @map("geo_allow")
+  cookieDays       Int?        @map("cookie_days")
+  /// Money: Decimal(19,4) — never floating point
+  commissionValue  Decimal?    @map("commission_value") @db.Decimal(19, 4)
+  commissionType   String?     @map("commission_type")
   createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
   archivedAt       DateTime?   @map("archived_at") @db.Timestamptz(3)
   deletedAt        DateTime?   @map("deleted_at") @db.Timestamptz(3)
 
-  tenant              Tenant             @relation(fields: [tenantId], references: [id])
-  landingPages        LandingPage[]
-  trackingLinks       TrackingLink[]
-  trackingLinkOffers  TrackingLinkOffer[]
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  merchant           Merchant?           @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  landingPages       LandingPage[]
+  trackingLinks      TrackingLink[]
+  /// Launch Wizard back-reference (additive)
+  launchChecklists   LaunchChecklist[]
+  trackingLinkOffers TrackingLinkOffer[]
+  offerPolicies      OfferPolicy[]
+  offerRiskScores    OfferRiskScore[]
+  profitModels       ProfitModel[]
+  /// Phase 3 Optimization — A/B experiments + kill switch (additive, no existing behavior changed)
+  experiments        Experiment[]
+  killSwitchConfig   KillSwitchConfig?
+  killSwitchEvents   KillSwitchEvent[]
+  /// Phase 4 Research Lab — cloaking findings (additive, read-only from research)
+  cloakingFindings   CloakingFinding[]
 
   @@unique([tenantId, idempotencyScope, idempotencyKey])
   @@index([tenantId])
@@ -376,20 +458,24 @@ model TrackingLinkOffer {
 }
 
 model LandingPage {
-  id         String            @id @db.Uuid
-  tenantId   String            @map("tenant_id") @db.Uuid
-  offerId    String            @map("offer_id") @db.Uuid
-  name       String
-  url        String
-  domain     String
-  status     LandingPageStatus @default(ACTIVE)
-  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt  DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
-  archivedAt DateTime?         @map("archived_at") @db.Timestamptz(3)
-  deletedAt  DateTime?         @map("deleted_at") @db.Timestamptz(3)
+  id          String            @id @db.Uuid
+  tenantId    String            @map("tenant_id") @db.Uuid
+  offerId     String            @map("offer_id") @db.Uuid
+  name        String
+  url         String
+  domain      String
+  /// Lander Intel: rendered HTML when created from a template (nullable, additive).
+  htmlContent String?           @map("html_content")
+  status      LandingPageStatus @default(ACTIVE)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt  DateTime?         @map("archived_at") @db.Timestamptz(3)
+  deletedAt   DateTime?         @map("deleted_at") @db.Timestamptz(3)
 
-  offer         Offer          @relation(fields: [offerId], references: [id], onDelete: Restrict)
-  trackingLinks TrackingLink[]
+  offer            Offer             @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  trackingLinks    TrackingLink[]
+  /// Launch Wizard back-reference (additive)
+  launchChecklists LaunchChecklist[]
 
   @@index([offerId])
   @@index([domain])
@@ -414,14 +500,20 @@ model TrackingLink {
   archivedAt    DateTime?          @map("archived_at") @db.Timestamptz(3)
   deletedAt     DateTime?          @map("deleted_at") @db.Timestamptz(3)
 
-  campaign    Campaign?         @relation(fields: [campaignId], references: [id], onDelete: Restrict)
-  adGroup     AdGroup?          @relation(fields: [adGroupId], references: [id], onDelete: Restrict)
-  ad          Ad?               @relation(fields: [adId], references: [id], onDelete: Restrict)
-  criterion   AdGroupCriterion? @relation(fields: [criterionId], references: [id], onDelete: Restrict)
-  offer       Offer             @relation(fields: [offerId], references: [id], onDelete: Restrict)
-  landingPage LandingPage?      @relation(fields: [landingPageId], references: [id], onDelete: Restrict)
-  clicks      Click[]
-  trackingLinkOffers TrackingLinkOffer[]
+  campaign            Campaign?            @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  adGroup             AdGroup?             @relation(fields: [adGroupId], references: [id], onDelete: Restrict)
+  ad                  Ad?                  @relation(fields: [adId], references: [id], onDelete: Restrict)
+  criterion           AdGroupCriterion?    @relation(fields: [criterionId], references: [id], onDelete: Restrict)
+  offer               Offer                @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  landingPage         LandingPage?         @relation(fields: [landingPageId], references: [id], onDelete: Restrict)
+  clicks              Click[]
+  trackingLinkOffers  TrackingLinkOffer[]
+  alerts              Alert[]
+  /// Automation — cashback offers bound to this tracking link (additive)
+  cashbackOffers      CashbackOffer[]
+  /// Launch Wizard back-reference (additive)
+  launchChecklists    LaunchChecklist[]
+  redirectChainChecks RedirectChainCheck[]
 
   @@index([campaignId])
   @@index([adGroupId])
@@ -467,6 +559,13 @@ model Click {
   ingestionId     String?  @map("ingestion_id")
   occurredAt      DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// Phase 2 — traffic attribution (additive). Only real observed values; never invented.
+  trafficSource   String?  @map("traffic_source")
+  trafficMedium   String?  @map("traffic_medium")
+  /// Google Ads criterion match type (EXACT/PHRASE/BROAD) — real lookup only
+  matchType       String?  @map("match_type")
+  /// Automation: synthetic/test click marker (additive; existing rows default false)
+  isTest          Boolean  @default(false) @map("is_test")
 
   /// Restrict — never cascade-delete clicks when tracking link archived
   trackingLink TrackingLink @relation(fields: [trackingLinkId], references: [id], onDelete: Restrict)
@@ -599,6 +698,14 @@ model UrlChangeRequest {
   scheduledAt      DateTime?              @map("scheduled_at") @db.Timestamptz(3)
   executedAt       DateTime?              @map("executed_at") @db.Timestamptz(3)
   error            String?
+  /// Automation: referral URL specified for this URL change (additive, nullable)
+  referralUrl      String?                @map("referral_url")
+  /// Automation: device targeting — "desktop" | "mobile" | "all" (additive, nullable)
+  deviceTarget     String?                @map("device_target")
+  /// Automation: target Google Ads account id (additive, nullable).
+  /// Plain UUID with NO Prisma relation / FK constraint, following the polymorphic-id
+  /// convention (e.g. AuditLog.entityId) — avoids breaking existing rows.
+  googleAccountId  String?                @map("google_account_id") @db.Uuid
   createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -651,6 +758,10 @@ model AuditLog {
   after      Json?
   requestId  String?  @map("request_id")
   jobId      String?  @map("job_id")
+  /// Phase 1 (§25): human reason + request context, nullable/additive
+  reason     String?
+  ip         String?
+  userAgent  String?  @map("user_agent")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([entityType, entityId])
@@ -664,27 +775,27 @@ model AuditLog {
 /// Phase 8.4.1 — Google Ads Script Integration (desired-state config source for Scripts).
 /// Token plaintext is NEVER stored — only keyId / prefix / hash.
 model GoogleAdsScriptIntegration {
-  id               String                   @id @db.Uuid
-  tenantId         String                   @map("tenant_id") @db.Uuid
-  googleAccountId  String                   @map("google_account_id") @db.Uuid
+  id               String                  @id @db.Uuid
+  tenantId         String                  @map("tenant_id") @db.Uuid
+  googleAccountId  String                  @map("google_account_id") @db.Uuid
   name             String
-  status           ScriptIntegrationStatus  @default(ACTIVE)
+  status           ScriptIntegrationStatus @default(ACTIVE)
   /// Opaque id for logs — never the raw token
-  tokenKeyId       String                   @map("token_key_id")
+  tokenKeyId       String                  @map("token_key_id")
   /// Short display prefix e.g. alk_s_ab12
-  tokenPrefix      String                   @map("token_prefix")
+  tokenPrefix      String                  @map("token_prefix")
   /// HMAC-SHA256 hash (pepper outside DB) — never plaintext
-  tokenHash        String                   @unique @map("token_hash")
+  tokenHash        String                  @unique @map("token_hash")
   /// Bumped when desired config for this integration changes
-  configGeneration Int                      @default(0) @map("config_generation")
-  lastSeenAt       DateTime?                @map("last_seen_at") @db.Timestamptz(3)
-  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
-  archivedAt       DateTime?                @map("archived_at") @db.Timestamptz(3)
-  deletedAt        DateTime?                @map("deleted_at") @db.Timestamptz(3)
+  configGeneration Int                     @default(0) @map("config_generation")
+  lastSeenAt       DateTime?               @map("last_seen_at") @db.Timestamptz(3)
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt       DateTime?               @map("archived_at") @db.Timestamptz(3)
+  deletedAt        DateTime?               @map("deleted_at") @db.Timestamptz(3)
 
-  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  googleAccount GoogleAccount     @relation(fields: [googleAccountId], references: [id], onDelete: Restrict)
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  googleAccount GoogleAccount      @relation(fields: [googleAccountId], references: [id], onDelete: Restrict)
   targets       ScriptSyncTarget[]
   syncLogs      ScriptSyncLog[]
 
@@ -732,19 +843,19 @@ model ScriptSyncTarget {
 
 /// Phase 8.4.1 — Append-only Script sync history. Never cascade-delete.
 model ScriptSyncLog {
-  id                      String                @id @db.Uuid
-  tenantId                String                @map("tenant_id") @db.Uuid
-  integrationId           String                @map("integration_id") @db.Uuid
-  targetId                String                @map("target_id") @db.Uuid
-  desiredVersion          Int                   @map("desired_version")
-  reportedAppliedVersion  Int?                  @map("reported_applied_version")
-  result                  ScriptExecutionResult
-  errorCode               String?               @map("error_code")
-  errorMessage            String?               @map("error_message")
-  requestId               String?               @map("request_id")
-  idempotencyScope        String                @default("SCRIPT_SYNC_RESULT") @map("idempotency_scope")
-  idempotencyKey          String                @map("idempotency_key")
-  createdAt               DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                     String                @id @db.Uuid
+  tenantId               String                @map("tenant_id") @db.Uuid
+  integrationId          String                @map("integration_id") @db.Uuid
+  targetId               String                @map("target_id") @db.Uuid
+  desiredVersion         Int                   @map("desired_version")
+  reportedAppliedVersion Int?                  @map("reported_applied_version")
+  result                 ScriptExecutionResult
+  errorCode              String?               @map("error_code")
+  errorMessage           String?               @map("error_message")
+  requestId              String?               @map("request_id")
+  idempotencyScope       String                @default("SCRIPT_SYNC_RESULT") @map("idempotency_scope")
+  idempotencyKey         String                @map("idempotency_key")
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
 
   integration GoogleAdsScriptIntegration @relation(fields: [integrationId], references: [id], onDelete: Restrict)
   target      ScriptSyncTarget           @relation(fields: [targetId], references: [id], onDelete: Restrict)
@@ -755,4 +866,903 @@ model ScriptSyncLog {
   @@index([targetId])
   @@index([createdAt])
   @@map("script_sync_logs")
+}
+
+/// Phase 11 — AI settings (admin-managed key-value store, e.g. LLM config).
+/// Secrets are stored encrypted (see apps/api/src/ai/crypto.ts), never plaintext.
+model AiSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("ai_settings")
+}
+
+/// Phase 11 — persisted AI offer risk analyses (tenant-scoped).
+model AiAnalysis {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  inputKind      String   @map("input_kind")
+  inputRef       String   @map("input_ref")
+  merchant       String?
+  network        String?
+  payout         Float?
+  payoutCurrency String?  @map("payout_currency")
+  estimatedCpc   Float?   @map("estimated_cpc")
+  result         Json     @map("result") @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([tenantId])
+  @@map("ai_analyses")
+}
+
+/// P1 — traffic monitoring: per-tenant alert rules (additive).
+model AlertRule {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  name          String
+  metric        String
+  thresholdPct  Float    @map("threshold_pct")
+  windowHours   Int      @default(24) @map("window_hours")
+  baselineHours Int      @default(168) @map("baseline_hours")
+  minClicks     Int      @default(50) @map("min_clicks")
+  autoPause     Boolean  @default(false) @map("auto_pause")
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  alerts Alert[]
+
+  @@index([tenantId])
+  @@map("alert_rules")
+}
+
+/// P1 — traffic monitoring: fired alerts (additive).
+model Alert {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  ruleId         String?  @map("rule_id") @db.Uuid
+  trackingLinkId String?  @map("tracking_link_id") @db.Uuid
+  metric         String
+  severity       String
+  message        String
+  data           Json?    @db.JsonB
+  status         String   @default("open")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  rule         AlertRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  trackingLink TrackingLink? @relation(fields: [trackingLinkId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@map("alerts")
+}
+
+/// Phase 1 Offer Intelligence — merchant entity (additive).
+model Merchant {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  name      String
+  domain    String?
+  networkId String?   @map("network_id") @db.Uuid
+  riskScore Float?    @map("risk_score")
+  riskLevel String?   @map("risk_level")
+  status    String    @default("ACTIVE")
+  notes     String?
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant  Tenant            @relation(fields: [tenantId], references: [id])
+  network AffiliateNetwork? @relation(fields: [networkId], references: [id], onDelete: SetNull)
+  offers  Offer[]
+
+  @@index([tenantId])
+  @@index([networkId])
+  @@index([status])
+  @@map("merchants")
+}
+
+/// Phase 1 Offer Intelligence — affiliate network entity (additive).
+/// API credentials are stored ONLY as an encrypted reference (apiKeyRef,
+/// format `enc:v1:<...>`, AES-256-GCM) — never in plaintext.
+model AffiliateNetwork {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  name          String
+  website       String?
+  /// Adapter kind: "impact" | "rakuten" (see apps/api/src/networks/index.ts)
+  kind          String    @default("impact")
+  apiConfigured Boolean   @default(false) @map("api_configured")
+  /// Encrypted API key reference (AccountSID:AuthToken for Impact).
+  apiKeyRef     String?   @map("api_key_ref")
+  /// Adapter-specific base URL override (e.g. Impact sandbox).
+  apiBaseUrl    String?   @map("api_base_url")
+  lastPullAt    DateTime? @map("last_pull_at") @db.Timestamptz(3)
+  /// NEVER | RUNNING | SUCCESS | FAILED
+  pullStatus    String    @default("NEVER") @map("pull_status")
+  pullError     String?   @map("pull_error") @db.Text
+  status        String    @default("ACTIVE")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id])
+  merchants Merchant[]
+  pulls     NetworkOfferPull[]
+  offers    NetworkOffer[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("affiliate_networks")
+}
+
+/// Network API framework — one row per offer-pull run (audit + counts).
+model NetworkOfferPull {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  networkId    String   @map("network_id") @db.Uuid
+  pulledAt     DateTime @default(now()) @map("pulled_at") @db.Timestamptz(3)
+  offerCount   Int      @default(0) @map("offer_count")
+  newCount     Int      @default(0) @map("new_count")
+  updatedCount Int      @default(0) @map("updated_count")
+  /// SUCCESS | FAILED
+  status       String
+  error        String?  @map("error") @db.Text
+
+  tenant  Tenant           @relation(fields: [tenantId], references: [id])
+  network AffiliateNetwork @relation(fields: [networkId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, networkId, pulledAt])
+  @@map("network_offer_pulls")
+}
+
+/// Network API framework — raw offers pulled from a network adapter.
+/// Staging table: Phase 1 auto-screening can promote rows into Offer later.
+/// Money: Decimal(19,4) — never floating point.
+model NetworkOffer {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  networkId  String   @map("network_id") @db.Uuid
+  externalId String   @map("external_id")
+  name       String
+  payout     Decimal? @db.Decimal(19, 4)
+  currency   String?  @default("USD")
+  termsText  String?  @map("terms_text") @db.Text
+  rawData    Json     @map("raw_data") @db.JsonB
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant  Tenant           @relation(fields: [tenantId], references: [id])
+  network AffiliateNetwork @relation(fields: [networkId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, networkId, externalId])
+  @@index([tenantId, networkId])
+  @@map("network_offers")
+}
+
+/// Phase 1 Offer Intelligence — structured policy scan result (§5, additive).
+model OfferPolicy {
+  id                String    @id @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  offerId           String    @map("offer_id") @db.Uuid
+  sourceUrl         String?   @map("source_url")
+  sourceSnapshotUrl String?   @map("source_snapshot_url")
+  retrievedAt       DateTime? @map("retrieved_at") @db.Timestamptz(3)
+  rawTerms          String?   @map("raw_terms")
+  /// Record<rule name, "ALLOWED" | "FORBIDDEN" | "REQUIRED" | "UNKNOWN">
+  rules             Json      @map("rules") @db.JsonB
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id])
+  offer    Offer            @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  evidence PolicyEvidence[]
+
+  @@index([tenantId])
+  @@index([offerId])
+  @@map("offer_policies")
+}
+
+/// Phase 1 Offer Intelligence — per-rule evidence (§5, additive).
+/// matchedText MUST come from the real fetched terms text — never invented by AI.
+model PolicyEvidence {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  offerPolicyId String    @map("offer_policy_id") @db.Uuid
+  rule          String
+  matchedText   String    @map("matched_text")
+  confidence    Float
+  sourceExcerpt String?   @map("source_excerpt")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  offerPolicy OfferPolicy @relation(fields: [offerPolicyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([offerPolicyId])
+  @@index([rule])
+  @@map("policy_evidence")
+}
+
+/// Phase 1 Offer Intelligence — structured risk score snapshot (§6/§10, additive).
+model OfferRiskScore {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  offerId       String    @map("offer_id") @db.Uuid
+  overallScore  Float     @map("overall_score")
+  policyScore   Float?    @map("policy_score")
+  profitScore   Float?    @map("profit_score")
+  merchantScore Float?    @map("merchant_score")
+  trackingScore Float?    @map("tracking_score")
+  /// RUN | TEST | MANUAL_REVIEW | DO_NOT_RUN
+  decision      String
+  evaluatedAt   DateTime  @default(now()) @map("evaluated_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  offer  Offer  @relation(fields: [offerId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([offerId])
+  @@index([decision])
+  @@map("offer_risk_scores")
+}
+
+/// Phase 1 Offer Intelligence — profit model + three scenarios (§7/§8/§9/§35, additive).
+model ProfitModel {
+  id                String    @id @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  offerId           String    @map("offer_id") @db.Uuid
+  /// Money: Decimal(19,4) — never floating point
+  commission        Decimal?  @db.Decimal(19, 4)
+  commissionType    String?   @map("commission_type")
+  currency          String    @default("USD")
+  expectedCvr       Float?    @map("expected_cvr")
+  approvalRate      Float?    @map("approval_rate")
+  attributionRate   Float?    @map("attribution_rate")
+  refundRate        Float?    @map("refund_rate")
+  /// { worst: {...}, base: {...}, best: {...} } — each { cvr, cpc, clicks, profit }
+  scenarios         Json      @map("scenarios") @db.JsonB
+  breakEvenCpc      Float?    @map("break_even_cpc")
+  recommendedMaxCpc Float?    @map("recommended_max_cpc")
+  /// OBSERVED | PREDICTED | UNKNOWN — never let PREDICTED masquerade as OBSERVED
+  dataQuality       String    @default("UNKNOWN") @map("data_quality")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  offer  Offer  @relation(fields: [offerId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([offerId])
+  @@map("profit_models")
+}
+
+/// Phase 2 Traffic Intelligence — append-only traffic event journal (additive).
+/// Chain: AD_CLICK → [LANDING_PAGE_VIEW] → AFFILIATE_CLICK → [MERCHANT_VISIT]
+///        → CONVERSION → [COMMISSION]. Every row is observed data
+/// (dataQuality is always OBSERVED) — never invented, never backfilled.
+model TrafficEvent {
+  id             String           @id @db.Uuid
+  tenantId       String           @map("tenant_id") @db.Uuid
+  parentEventId  String?          @map("parent_event_id") @db.Uuid
+  eventType      TrafficEventType @map("event_type")
+  clickId        String?          @map("click_id") @db.Uuid
+  conversionId   String?          @map("conversion_id") @db.Uuid
+  trackingLinkId String?          @map("tracking_link_id") @db.Uuid
+  timestamp      DateTime         @default(now()) @db.Timestamptz(3)
+  source         String?
+  destination    String?
+  metadata       Json?            @db.JsonB
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  deletedAt      DateTime?        @map("deleted_at") @db.Timestamptz(3)
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id])
+  /// Restrict — never cascade-delete events when a parent event is removed
+  parent   TrafficEvent?  @relation("TrafficEventChain", fields: [parentEventId], references: [id], onDelete: Restrict)
+  children TrafficEvent[] @relation("TrafficEventChain")
+
+  @@index([tenantId])
+  @@index([clickId])
+  @@index([conversionId])
+  @@index([parentEventId])
+  @@index([eventType])
+  @@index([timestamp])
+  @@map("traffic_events")
+}
+
+/// Phase 3 Optimization — A/B experiments (additive).
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+/// Phase 3 Optimization — A/B experiment on one offer (additive).
+model Experiment {
+  id                String           @id @db.Uuid
+  tenantId          String           @map("tenant_id") @db.Uuid
+  offerId           String           @map("offer_id") @db.Uuid
+  name              String
+  status            ExperimentStatus @default(DRAFT)
+  /// { type: "LANDING_PAGE"|"DIRECT_LINK", trackingLinkId: string, label: string }
+  variantA          Json             @map("variant_a") @db.JsonB
+  variantB          Json             @map("variant_b") @db.JsonB
+  trafficSplitA     Int              @default(50) @map("traffic_split_a")
+  splitSeed         String?          @map("split_seed")
+  /// { clicks, ctr, cpc, lpViews, affiliateClicks, cvr, cpa, revenue, profit, approvalRate, refundRate }
+  metricsA          Json?            @map("metrics_a") @db.JsonB
+  metricsB          Json?            @map("metrics_b") @db.JsonB
+  winner            String?
+  confidence        Float?
+  preconditionCheck Json?            @map("precondition_check") @db.JsonB
+  startedAt         DateTime?        @map("started_at") @db.Timestamptz(3)
+  endedAt           DateTime?        @map("ended_at") @db.Timestamptz(3)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt         DateTime?        @map("deleted_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  offer  Offer  @relation(fields: [offerId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([offerId])
+  @@map("experiments")
+}
+
+/// Phase 3 Optimization — per-offer kill-switch thresholds (additive).
+/// enabled=false (default): alert only, never auto-pause (prevents friendly fire).
+model KillSwitchConfig {
+  id                        String   @id @db.Uuid
+  tenantId                  String   @map("tenant_id") @db.Uuid
+  offerId                   String   @map("offer_id") @db.Uuid
+  enabled                   Boolean  @default(false)
+  /// Money: Decimal(12,2)
+  maxSpend                  Decimal? @map("max_spend") @db.Decimal(12, 2)
+  minExpectedProfit         Decimal? @map("min_expected_profit") @db.Decimal(12, 2)
+  minCvr                    Float?   @map("min_cvr")
+  maxPolicyRisk             Int?     @map("max_policy_risk")
+  pauseOnMerchantTerminated Boolean  @default(true) @map("pause_on_merchant_terminated")
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                 DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  offer  Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId])
+  @@index([tenantId])
+  @@map("kill_switch_configs")
+}
+
+/// Phase 3 Optimization — kill-switch firing record (append-only, additive).
+model KillSwitchEvent {
+  id                String   @id @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  offerId           String   @map("offer_id") @db.Uuid
+  /// SPEND_PROFIT | CVR_FLOOR | POLICY_RISK | MERCHANT_TERMINATED
+  triggeredBy       String   @map("triggered_by")
+  conditionSnapshot Json     @map("condition_snapshot") @db.JsonB
+  /// ALERT_ONLY | PAUSED_ALL_LINKS
+  actionTaken       String   @map("action_taken")
+  linksPaused       Int      @default(0) @map("links_paused")
+  autoExecute       Boolean  @map("auto_execute")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  offer  Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([offerId])
+  @@map("kill_switch_events")
+}
+
+/// Phase 4 Research Lab — cloaking/differential research test (additive).
+/// A test fetches targetUrl with several request variants (UA / language /
+/// geo-flavoured) and compares the responses for cloaking signals.
+model ResearchTest {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  targetUrl String    @map("target_url")
+  name      String
+  /// PENDING | RUNNING | COMPLETED | FAILED
+  status    String    @default("PENDING")
+  /// Request variant configs: [{ name, userAgent, acceptLanguage, headers? }]
+  variants  Json      @db.JsonB
+  createdBy String?   @map("created_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id])
+  responses ResearchResponse[]
+  findings  CloakingFinding[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("research_tests")
+}
+
+/// Phase 4 Research Lab — one fetched response per request variant (additive).
+/// Failed variants record their error in meta (never throw); they are excluded
+/// from differential comparison.
+model ResearchResponse {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  researchTestId String    @map("research_test_id") @db.Uuid
+  variantName    String    @map("variant_name")
+  httpStatus     Int?      @map("http_status")
+  finalUrl       String?   @map("final_url")
+  redirectChain  Json      @default("[]") @map("redirect_chain") @db.JsonB
+  headers        Json      @default("{}") @db.JsonB
+  htmlHash       String?   @map("html_hash")
+  contentHash    String?   @map("content_hash")
+  textExcerpt    String?   @map("text_excerpt")
+  /// { error?: string, setCookieCount?: number, ... } — failure detail lives here
+  meta           Json      @default("{}") @db.JsonB
+  linksCount     Int?      @map("links_count")
+  scriptsCount   Int?      @map("scripts_count")
+  fetchedAt      DateTime  @default(now()) @map("fetched_at") @db.Timestamptz(3)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id])
+  test   ResearchTest @relation(fields: [researchTestId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([researchTestId])
+  @@map("research_responses")
+}
+
+/// Phase 4 Research Lab — differential/cloaking finding per test run (additive).
+/// differentialScore is a heuristic 0-100; 差异≠恶意 — see classifier.ts.
+model CloakingFinding {
+  id                String    @id @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  researchTestId    String    @map("research_test_id") @db.Uuid
+  offerId           String?   @map("offer_id") @db.Uuid
+  /// Weighted differential score, 0-100 (see research/detector.ts)
+  differentialScore Float     @map("differential_score")
+  /// NORMAL | MINOR | SUSPICIOUS | HIGH_RISK | STRONG (score bands, §21)
+  band              String
+  /// One of the 8 classifier labels (see research/classifier.ts, §22)
+  classification    String
+  evidence          Json      @db.JsonB
+  aiSummary         String?   @map("ai_summary")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id])
+  test   ResearchTest @relation(fields: [researchTestId], references: [id], onDelete: Cascade)
+  offer  Offer?       @relation(fields: [offerId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([researchTestId])
+  @@index([offerId])
+  @@map("cloaking_findings")
+}
+
+/// Lander Intel — landing page efficiency analysis (additive).
+/// scores: { performance, cta, trust, mobile, copy, bounceRisk } 0-100 each.
+/// issues: [{ dimension, severity: "high"|"medium"|"low", message }].
+/// suggestions: [{ text, dataQuality: "PREDICTED" }] — always AI-generated.
+model LanderAnalysis {
+  id           String    @id @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  url          String
+  domain       String
+  overallScore Float     @map("overall_score")
+  scores       Json      @db.JsonB
+  issues       Json      @db.JsonB
+  suggestions  Json      @db.JsonB
+  analyzedAt   DateTime  @default(now()) @map("analyzed_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("lander_analyses")
+}
+
+/// Lander Intel — competitor landing page watch (additive).
+/// checkInterval in seconds, minimum 3600 (1h) enforced in code.
+model CompetitorWatch {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  name          String
+  url           String
+  checkInterval Int       @default(3600) @map("check_interval")
+  lastHash      String?   @map("last_hash")
+  lastCheckedAt DateTime? @map("last_checked_at") @db.Timestamptz(3)
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant  Tenant             @relation(fields: [tenantId], references: [id])
+  changes CompetitorChange[]
+
+  @@index([tenantId])
+  @@map("competitor_watches")
+}
+
+/// Lander Intel — detected competitor page change (additive).
+/// diffSummary: { title?: {before, after}, price?: {before, after},
+///   cta?: {before, after}, sectionsAdded?: string[], sectionsRemoved?: string[] }
+model CompetitorChange {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  watchId     String   @map("watch_id") @db.Uuid
+  changedAt   DateTime @default(now()) @map("changed_at") @db.Timestamptz(3)
+  diffSummary Json     @map("diff_summary") @db.JsonB
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id])
+  watch  CompetitorWatch @relation(fields: [watchId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([watchId])
+  @@map("competitor_changes")
+}
+
+/// Lander Intel — high-converting landing page templates (additive).
+/// category: review | comparison | listicle | quiz.
+/// tenantId NULL => built-in global template.
+model LanderTemplate {
+  id           String    @id @db.Uuid
+  tenantId     String?   @map("tenant_id") @db.Uuid
+  name         String
+  category     String
+  description  String?
+  htmlTemplate String    @map("html_template")
+  thumbnailUrl String?   @map("thumbnail_url")
+  isBuiltIn    Boolean   @default(false) @map("is_built_in")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  @@index([tenantId])
+  @@map("lander_templates")
+}
+
+/// Automation — cashback-network offer (additive).
+/// cashbackNetwork: e.g. "rakuten". trackingLinkId binds an offer to the
+/// TrackingLink that currently serves it (nullable; SetNull on link delete).
+model CashbackOffer {
+  id                String    @id @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  cashbackNetwork   String    @map("cashback_network")
+  originalUrl       String    @map("original_url")
+  trackingLinkId    String?   @map("tracking_link_id") @db.Uuid
+  /// AdsPower browser-profile id for account isolation (opaque, no FK)
+  adspowerProfileId String?   @map("adspower_profile_id")
+  status            String    @default("active")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  trackingLink       TrackingLink?       @relation(fields: [trackingLinkId], references: [id], onDelete: SetNull)
+  rotationGroupItems RotationGroupItem[]
+  cashbackRateChecks CashbackRateCheck[]
+
+  @@index([tenantId])
+  @@index([trackingLinkId])
+  @@index([status])
+  @@map("cashback_offers")
+}
+
+/// Cashback automation pack (2026-10-08) — 返利比例监控：每次比例检查记录。
+model CashbackRateCheck {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  cashbackOfferId String   @map("cashback_offer_id") @db.Uuid
+  advertisedRate  String   @map("advertised_rate")
+  detectedRate    String?  @map("detected_rate")
+  rateUrl         String?  @map("rate_url")
+  status          String
+  checkedAt       DateTime @default(now()) @map("checked_at") @db.Timestamptz(3)
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cashbackOffer CashbackOffer @relation(fields: [cashbackOfferId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([cashbackOfferId])
+  @@index([checkedAt])
+  @@map("cashback_rate_checks")
+}
+
+/// Cashback automation pack (2026-10-08) — 商家返利条款监控。
+model CashbackTermsWatch {
+  id              String    @id @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  merchantName    String    @map("merchant_name")
+  merchantDomain  String    @map("merchant_domain")
+  termsUrl        String    @map("terms_url")
+  termsHash       String?   @map("terms_hash")
+  cashbackAllowed Boolean?  @map("cashback_allowed")
+  lastChecked     DateTime? @map("last_checked") @db.Timestamptz(3)
+  status          String    @default("ok")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("cashback_terms_watches")
+}
+
+/// Cashback automation pack (2026-10-08) — 跳转链检测：per-link redirect chain scan records.
+model RedirectChainCheck {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  trackingLinkId String   @map("tracking_link_id") @db.Uuid
+  hopCount       Int      @map("hop_count")
+  hops           Json     @db.JsonB
+  issues         Json     @db.JsonB
+  checkedAt      DateTime @default(now()) @map("checked_at") @db.Timestamptz(3)
+  status         String
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trackingLink TrackingLink @relation(fields: [trackingLinkId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, trackingLinkId, checkedAt])
+  @@map("redirect_chain_checks")
+}
+
+/// Cashback automation pack (2026-10-08) — 返利比价分组：一个 merchant 在多个返利网的 URL 集合。portals[0] 默认为主推。
+model CashbackCompareGroup {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  name           String
+  merchantDomain String   @map("merchant_domain")
+  portals        Json     @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("cashback_compare_groups")
+}
+
+/// Cashback automation pack (2026-10-08) — 每次比价时每个 portal 的返利比例快照。
+model CashbackRateSnapshot {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  merchantDomain String   @map("merchant_domain")
+  portal         String
+  rate           String?
+  url            String?
+  checkedAt      DateTime @map("checked_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, merchantDomain, checkedAt(sort: Desc)])
+  @@map("cashback_rate_snapshots")
+}
+
+/// Automation — offer rotation group (additive).
+/// strategy: "round_robin" | "weighted" | ... (stored as plain string)
+model RotationGroup {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  strategy  String   @default("round_robin")
+  isActive  Boolean  @default(true) @map("is_active")
+  /// Auto-rotation interval in milliseconds (default 1 hour). Null/0 = manual only.
+  rotationIntervalMs Int @default(3600000) @map("rotation_interval_ms")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant              @relation(fields: [tenantId], references: [id])
+  items  RotationGroupItem[]
+
+  @@index([tenantId])
+  @@map("rotation_groups")
+}
+
+/// Automation — rotation group member (additive).
+/// Deleting a group cascades to its items; offers are never cascade-deleted.
+model RotationGroupItem {
+  id              String @id @db.Uuid
+  rotationGroupId String @map("rotation_group_id") @db.Uuid
+  cashbackOfferId String @map("cashback_offer_id") @db.Uuid
+  weight          Int    @default(1)
+  sortOrder       Int    @default(0) @map("sort_order")
+
+  rotationGroup RotationGroup @relation(fields: [rotationGroupId], references: [id], onDelete: Cascade)
+  cashbackOffer CashbackOffer @relation(fields: [cashbackOfferId], references: [id], onDelete: Restrict)
+
+  @@index([rotationGroupId])
+  @@index([cashbackOfferId])
+  @@map("rotation_group_items")
+}
+
+/// Automation Pack — 2026-10-07
+/// 1. Dead link monitor: hourly health checks of ACTIVE tracking links.
+model LinkHealthCheck {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  trackingLinkId String   @map("tracking_link_id") @db.Uuid
+  checkedAt      DateTime @default(now()) @map("checked_at") @db.Timestamptz(3)
+  statusCode     Int?     @map("status_code")
+  finalUrl       String?  @map("final_url")
+  isAlive        Boolean  @map("is_alive")
+  failureReason  String?  @map("failure_reason")
+  responseTimeMs Int?     @map("response_time_ms")
+
+  @@index([tenantId, trackingLinkId, checkedAt])
+  @@map("link_health_checks")
+}
+
+/// 2. Search term miner: AI-suggested negative keywords from search term reports.
+model SearchTermSuggestion {
+  id              String                     @id @db.Uuid
+  tenantId        String                     @map("tenant_id") @db.Uuid
+  searchTerm      String                     @map("search_term")
+  campaignName    String?                    @map("campaign_name")
+  matchType       String?                    @map("match_type")
+  suggestedAction SearchTermAction           @map("suggested_action")
+  reason          String?
+  status          SearchTermSuggestionStatus @default(PENDING)
+  createdAt       DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([tenantId, status])
+  @@map("search_term_suggestions")
+}
+
+enum SearchTermAction {
+  ADD_NEGATIVE_EXACT
+  ADD_NEGATIVE_PHRASE
+  IGNORE
+}
+
+enum SearchTermSuggestionStatus {
+  PENDING
+  APPLIED
+  DISMISSED
+}
+
+/// 3. Payout watch: detect merchant commission changes.
+model PayoutWatch {
+  id            String    @id @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  offerId       String    @map("offer_id") @db.Uuid
+  enabled       Boolean   @default(true)
+  lastPayout    Float?    @map("last_payout")
+  lastCheckedAt DateTime? @map("last_checked_at") @db.Timestamptz(3)
+  changeHistory Json      @default("[]") @map("change_history")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, offerId])
+  @@index([tenantId])
+  @@map("payout_watches")
+}
+
+/// 4. Budget pacer: ROAS-based auto budget adjustment rules.
+model BudgetRule {
+  id                String    @id @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  googleAccountId   String    @map("google_account_id") @db.Uuid
+  campaignName      String    @map("campaign_name")
+  campaignId        String?   @map("campaign_id")
+  targetRoas        Float     @map("target_roas")
+  minDailyBudget    Float     @map("min_daily_budget")
+  maxDailyBudget    Float     @map("max_daily_budget")
+  increasePct       Float     @default(20) @map("increase_pct")
+  decreasePct       Float     @default(20) @map("decrease_pct")
+  checkIntervalDays Int       @default(7) @map("check_interval_days")
+  enabled           Boolean   @default(false)
+  lastEvaluatedAt   DateTime? @map("last_evaluated_at") @db.Timestamptz(3)
+  lastAction        Json?     @map("last_action")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([tenantId, enabled])
+  @@map("budget_rules")
+}
+
+/// 5. Landing page optimization queue: tasks auto-created from analyzer scores.
+model LandingPageOptimizationTask {
+  id            String                 @id @db.Uuid
+  tenantId      String                 @map("tenant_id") @db.Uuid
+  landingPageId String                 @map("landing_page_id") @db.Uuid
+  score         Int
+  issues        Json                   @default("[]")
+  priority      OptimizationPriority
+  status        OptimizationTaskStatus @default(PENDING)
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  completedAt   DateTime?              @map("completed_at") @db.Timestamptz(3)
+
+  @@index([tenantId, status, priority])
+  @@map("landing_page_optimization_tasks")
+}
+
+/// LP AI Rewriter (automation round 2): AI-generated before/after rewrite
+/// drafts against analyzer issues; the user confirms in the UI before the
+/// draft is applied to the LandingPage. Status is DRAFT/APPLIED (plain
+/// String, not an enum, to keep the additive migration trivial).
+model LandingPageRewrite {
+  id               String   @id @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  landingPageId    String   @map("landing_page_id") @db.Uuid
+  originalScore    Int      @map("original_score")
+  issues           Json     @default("[]")
+  rewrittenContent Json     @map("rewritten_content")
+  newScore         Int?     @map("new_score")
+  status           String   @default("DRAFT") @map("status")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([tenantId, landingPageId])
+  @@map("landing_page_rewrites")
+}
+
+enum OptimizationPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum OptimizationTaskStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+}
+
+/// Launch Wizard (automation round 2): guided 6-step offer launch checklist.
+/// Status is a plain String (DRAFT/IN_PROGRESS/COMPLETED) to keep the
+/// additive migration trivial — same convention as LandingPageRewrite.
+model LaunchChecklist {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  offerId        String?   @map("offer_id") @db.Uuid
+  trackingLinkId String?   @map("tracking_link_id") @db.Uuid
+  landingPageId  String?   @map("landing_page_id") @db.Uuid
+  currentStep    Int       @default(1) @map("current_step")
+  status         String    @default("DRAFT") @map("status")
+  stepsData      Json      @default("{}") @map("steps_data")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(3)
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  offer        Offer?        @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  trackingLink TrackingLink? @relation(fields: [trackingLinkId], references: [id], onDelete: SetNull)
+  landingPage  LandingPage?  @relation(fields: [landingPageId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([offerId])
+  @@index([status])
+  @@map("launch_checklists")
+}
+
+/// Automation round 2: weekly report — aggregated weekly stats + AI narrative
+/// per tenant, generated every Monday 8am (America/New_York) by the
+/// weekly-report worker, also manually triggerable via API.
+model WeeklyReport {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  weekStart DateTime @map("week_start") @db.Timestamptz(3)
+  weekEnd   DateTime @map("week_end") @db.Timestamptz(3)
+  /// { spend, revenue, conversions, clicks, topOffers[], deadLinks,
+  ///   newNegatives, newTasks, alerts } — spend is null when unavailable.
+  data      Json     @db.JsonB
+  aiSummary String   @map("ai_summary")
+  /// GENERATED | SENT (plain String; email delivery not yet wired)
+  status    String   @default("GENERATED")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, weekStart, weekEnd])
+  @@index([tenantId])
+  @@map("weekly_reports")
 }

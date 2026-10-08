@@ -1,70 +1,70 @@
 /**
- * Phase 8.4.7.1 — Dashboard read-only HTTP routes (Integration Token auth).
+ * Phase 8.4.7.1 — Dashboard read-only HTTP routes.
+ * Dual auth: session (per-user, tenant-scoped) for the web UI,
+ * or integration token (legacy) for scripts. Each user sees their own tenant's data.
  */
 import type { FastifyInstance } from "fastify";
-import { AuditActions } from "@adlinklab/domain";
+import { requireTenant, type AuthContext } from "../auth/tenant.js";
 import {
   requireScriptIntegrationAuth,
-  type IntegrationAuthContext,
-  type IntegrationAuthFailureReason,
 } from "../auth/integration-auth.js";
 import type { AppServices } from "./index.js";
 
-function dashboardAuthAuditHooks(services: AppServices) {
-  return {
-    onSuccess: (ctx: IntegrationAuthContext) => {
-      if (!services.audit) return;
-      void services.audit
-        .record({
-          tenantId: ctx.tenantId,
-          actorId: ctx.tokenKeyId,
-          action: AuditActions.SCRIPT_INTEGRATION_AUTH_SUCCESS,
-          entityType: "GoogleAdsScriptIntegration",
-          entityId: ctx.integrationId,
-          resourceType: "GoogleAdsScriptIntegration",
-          resourceId: ctx.integrationId,
-          after: {
-            integrationId: ctx.integrationId,
-            googleAccountId: ctx.googleAccountId,
-            tokenKeyId: ctx.tokenKeyId,
-          },
-        })
-        .catch(() => undefined);
-    },
-    onFailure: (reason: IntegrationAuthFailureReason) => {
-      void reason;
-    },
-  };
-}
-
 export async function registerDashboardRoutes(
   app: FastifyInstance,
-  services: AppServices
+  services: AppServices,
+  auth: AuthContext
 ): Promise<void> {
-  const authHooks = dashboardAuthAuditHooks(services);
-
-  async function authenticate(request: Parameters<
-    typeof requireScriptIntegrationAuth
-  >[1]) {
+  /**
+   * Try session auth first (web UI). Fall back to integration token (scripts).
+   * Returns the tenantId to scope the query, plus whether the caller is
+   * restricted to a single integration (token auth) or sees the whole tenant (session).
+   */
+  async function authContext(
+    request: Parameters<typeof requireTenant>[1]
+  ): Promise<{ tenantId: string; integrationId?: string }> {
+    // Session auth: requireTenant throws if no session and auth mode requires it.
+    // In disabled mode it falls back to header/body tenant.
+    try {
+      const tenantId = requireTenant(auth, request);
+      // If we got here via session (request.auth set with kind=session),
+      // it's a user — full tenant view. Otherwise (disabled mode header),
+      // fall through to token check below.
+      if (request.auth && "kind" in request.auth && request.auth.kind === "session") {
+        return { tenantId };
+      }
+    } catch {
+      // Fall through to token auth
+    }
+    // Integration token auth (scripts): restricted to the one integration
     await requireScriptIntegrationAuth(
       { scriptIntegrations: services.scriptIntegrations },
-      request,
-      authHooks
+      request
     );
-    return request.integrationAuth!;
+    const ctx = request.integrationAuth!;
+    return { tenantId: ctx.tenantId, integrationId: ctx.integrationId };
   }
 
   app.get("/api/v1/dashboard/integrations", async (request) => {
-    const ctx = await authenticate(request);
-    return services.dashboardQuery.listIntegrations(ctx);
+    const { tenantId, integrationId } = await authContext(request);
+    if (integrationId) {
+      // Token auth: single integration view (legacy)
+      // request.integrationAuth is already set by authContext's fallback path
+      return services.dashboardQuery.listIntegrations(request.integrationAuth!);
+    }
+    return services.dashboardQuery.listIntegrationsForTenant(tenantId);
   });
 
   app.get<{
     Params: { integrationId: string };
   }>("/api/v1/dashboard/integrations/:integrationId", async (request) => {
-    const ctx = await authenticate(request);
-    return services.dashboardQuery.getIntegration(
-      ctx,
+    const { tenantId, integrationId: authIntegrationId } = await authContext(request);
+    if (authIntegrationId && authIntegrationId !== request.params.integrationId) {
+      const { ForbiddenError } = await import("@adlinklab/shared");
+      throw new ForbiddenError("integrationId does not match Integration auth");
+    }
+    return services.dashboardQuery.getIntegrationForTenant(
+      tenantId,
       request.params.integrationId
     );
   });
@@ -74,9 +74,13 @@ export async function registerDashboardRoutes(
   }>(
     "/api/v1/dashboard/integrations/:integrationId/targets",
     async (request) => {
-      const ctx = await authenticate(request);
-      return services.dashboardQuery.listTargets(
-        ctx,
+      const { tenantId, integrationId: authIntegrationId } = await authContext(request);
+      if (authIntegrationId && authIntegrationId !== request.params.integrationId) {
+        const { ForbiddenError } = await import("@adlinklab/shared");
+        throw new ForbiddenError("integrationId does not match Integration auth");
+      }
+      return services.dashboardQuery.listTargetsForTenant(
+        tenantId,
         request.params.integrationId
       );
     }
@@ -88,9 +92,13 @@ export async function registerDashboardRoutes(
   }>(
     "/api/v1/dashboard/integrations/:integrationId/logs",
     async (request) => {
-      const ctx = await authenticate(request);
-      return services.dashboardQuery.listLogs(
-        ctx,
+      const { tenantId, integrationId: authIntegrationId } = await authContext(request);
+      if (authIntegrationId && authIntegrationId !== request.params.integrationId) {
+        const { ForbiddenError } = await import("@adlinklab/shared");
+        throw new ForbiddenError("integrationId does not match Integration auth");
+      }
+      return services.dashboardQuery.listLogsForTenant(
+        tenantId,
         request.params.integrationId,
         request.query ?? {}
       );
@@ -98,7 +106,10 @@ export async function registerDashboardRoutes(
   );
 
   app.get("/api/v1/dashboard/summary", async (request) => {
-    const ctx = await authenticate(request);
-    return services.dashboardQuery.getSummary(ctx);
+    const { tenantId, integrationId } = await authContext(request);
+    if (integrationId) {
+      return services.dashboardQuery.getSummaryForTenant(tenantId);
+    }
+    return services.dashboardQuery.getSummaryForTenant(tenantId);
   });
 }

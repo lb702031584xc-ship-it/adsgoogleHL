@@ -6,3 +6,9 @@ http:
           X-Frame-Options: "DENY"
           X-Content-Type-Options: "nosniff"
           Referrer-Policy: "no-referrer"
+    # HTTP -> HTTPS redirect. The ACME HTTP challenge path is excluded
+    # (applied on the catchall router in docker-compose.yml).
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true

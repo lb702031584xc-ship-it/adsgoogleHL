@@ -25,6 +25,7 @@ import {
   EmptyState,
   ErrorState,
 } from "@/components/dashboard/states";
+import { useDict } from "@/i18n/use-dict";
 
 const LOG_PAGE_SIZE = 20;
 
@@ -47,6 +48,7 @@ export function ScriptDashboardClient({
   } | null;
   initialError: string | null;
 }) {
+  const t = useDict();
   const [summary, setSummary] = useState(initialSummary);
   const [detail, setDetail] = useState(initialDetail);
   const [targets, setTargets] = useState(initialTargets);
@@ -124,14 +126,14 @@ export function ScriptDashboardClient({
       {error ? <ErrorState message={error} /> : null}
 
       {pending && !summary ? (
-        <DashboardSkeleton label="Loading dashboard summary" />
+        <DashboardSkeleton label={t.dashboard.states.loadingSummary} />
       ) : summary ? (
         <>
           <IntegrationOverview summary={summary} />
           <SummaryCards summary={summary} />
         </>
       ) : (
-        <EmptyState message="No recent activity." />
+        <EmptyState message={t.dashboard.states.noRecentActivity} />
       )}
 
       {detail ? (
@@ -145,15 +147,15 @@ export function ScriptDashboardClient({
           createdAt={detail.integration.createdAt}
         />
       ) : pending ? (
-        <DashboardSkeleton label="Loading integration details" />
+        <DashboardSkeleton label={t.dashboard.states.loadingDetails} />
       ) : null}
 
       <section className="space-y-3">
         <h2 className="font-display text-xl font-semibold text-ink">
-          Target sync status
+          {t.dashboard.targetsTable.title}
         </h2>
         {pending && targets.length === 0 ? (
-          <DashboardSkeleton label="Loading targets" />
+          <DashboardSkeleton label={t.dashboard.states.loadingTargets} />
         ) : (
           <TargetsTable targets={targets} />
         )}
@@ -161,24 +163,24 @@ export function ScriptDashboardClient({
 
       <section className="space-y-3">
         <h2 className="font-display text-xl font-semibold text-ink">
-          Recent sync logs
+          {t.dashboard.logsTable.titleRecent}
         </h2>
         {summary && summary.recentLogs.length > 0 ? (
           <LogsTable
             logs={summary.recentLogs}
-            emptyMessage="No recent activity."
+            emptyMessage={t.dashboard.states.noRecentActivity}
           />
         ) : (
-          <EmptyState message="No recent activity." />
+          <EmptyState message={t.dashboard.states.noRecentActivity} />
         )}
       </section>
 
       <section className="space-y-3">
         <h2 className="font-display text-xl font-semibold text-ink">
-          Sync logs
+          {t.dashboard.logsTable.titleAll}
         </h2>
         {logsLoading || (pending && !logs) ? (
-          <DashboardSkeleton label="Loading sync logs" />
+          <DashboardSkeleton label={t.dashboard.states.loadingLogs} />
         ) : logs ? (
           <>
             <LogsTable logs={logs.items} />
@@ -193,7 +195,7 @@ export function ScriptDashboardClient({
             />
           </>
         ) : (
-          <EmptyState message="No sync logs yet." />
+          <EmptyState message={t.dashboard.states.noSyncLogs} />
         )}
       </section>
     </div>
@@ -207,6 +209,7 @@ function Header({
   onRefresh: () => void;
   pending: boolean;
 }) {
+  const t = useDict();
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
@@ -214,11 +217,10 @@ function Header({
           AdLinkLab
         </p>
         <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight text-ink">
-          Dashboard
+          {t.common.nav.dashboard}
         </h1>
         <p className="mt-2 max-w-2xl text-lg text-ink/70">
-          Read-only Script Integration overview — sync health, targets, and
-          logs.
+          {t.dashboard.page.description}
         </p>
       </div>
       <button
@@ -227,7 +229,7 @@ function Header({
         disabled={pending}
         className="rounded-md bg-ink px-4 py-2 text-sm font-semibold text-mist hover:bg-ink/90 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-signal focus:ring-offset-2"
       >
-        {pending ? "Refreshing…" : "Refresh"}
+        {pending ? t.dashboard.page.refreshing : t.common.actions.refresh}
       </button>
     </div>
   );

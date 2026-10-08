@@ -1,0 +1,271 @@
+/**
+ * Strategy (投放策略) strings.
+ * Consumed via `useDict()` as `t.strategy.*` once the coordinator registers
+ * it in dictionaries.ts; until then pages fall back to this module directly
+ * (see useStrategyDict) without breaking.
+ */
+export const zh = {
+  nav: {
+    strategy: "投放策略",
+  },
+  page: {
+    title: "AI 投放策略",
+    description:
+      "一站式决策编排：政策决策、盈利测算、实验状态、监控与研究结论，并生成可下载的投放建议书（文档，不会自动创建广告）。",
+    offerLabel: "Offer",
+    generate: "生成策略",
+    generating: "编排中，请稍候…",
+    needOffer: "请先选择一个 offer。",
+    failed: "策略生成失败，请稍后重试。",
+    noResult: "选择 offer 并点击「生成策略」，查看全链路编排结果。",
+    noTermsHint:
+      "该 offer 尚无条款数据：请先到「AI 决策」页运行一次决策（会抓取并保存条款），再回来生成策略。",
+  },
+  decision: {
+    title: "决策",
+    labels: {
+      RUN: "投放",
+      TEST: "小流量测试",
+      MANUAL_REVIEW: "人工复核",
+      DO_NOT_RUN: "不投放",
+    },
+    confidence: "置信度",
+    riskScore: "风险分",
+    profitScore: "盈利分",
+    policyScore: "政策分",
+    breakEvenCpc: "保本 CPC",
+    recommendedMaxCpc: "推荐上限 CPC",
+    trafficMode: "投放方式",
+    trafficModes: {
+      LANDING_PAGE: "落地页",
+      DIRECT_LINK: "直链",
+      UNKNOWN: "未知",
+    },
+    reasons: "决策依据",
+    manualChecks: "人工确认项",
+  },
+  profit: {
+    title: "盈利测算",
+    scenarios: {
+      worst: "悲观",
+      base: "基准",
+      best: "乐观",
+    },
+    cvr: "CVR",
+    cpc: "CPC",
+    clicks: "点击",
+    profit: "利润",
+    breakEven: "保本 CPC",
+    maxCpc: "推荐上限 CPC",
+    loadFailed: "加载盈利模型失败。",
+    noModel: "暂无盈利模型。",
+  },
+  experiments: {
+    title: "实验建议",
+    empty: "该 offer 暂无实验。",
+    suggest:
+      "建议为该 offer 创建「落地页 vs 直链」A/B 实验，用真实数据验证投放方式。",
+    name: "名称",
+    status: "状态",
+    winner: "胜者",
+    statuses: {
+      DRAFT: "草稿",
+      RUNNING: "运行中",
+      COMPLETED: "已完成",
+      CANCELLED: "已取消",
+    },
+  },
+  killSwitch: {
+    title: "监控 / Kill Switch",
+    enabled: "已启用",
+    disabled: "未启用",
+    noConfig: "该 offer 未配置 Kill Switch。",
+    maxSpend: "最大花费",
+    minProfit: "最低预期利润",
+    minCvr: "最低 CVR",
+    maxPolicyRisk: "最大政策风险",
+    recentEvents: "最近事件",
+    noEvents: "暂无触发事件。",
+  },
+  traffic: {
+    title: "真实流量（近 30 天）",
+    clicks: "点击",
+    conversions: "转化",
+    cvr: "CVR",
+    epc: "EPC",
+    topGeo: "主要地区",
+    topDevice: "主要设备",
+    noData: "暂无观测流量。",
+  },
+  research: {
+    title: "研究结论",
+    noData: "暂无研究结论（Phase 4 未返回数据）。",
+    score: "评分",
+    band: "区间",
+    classification: "分类",
+  },
+  plan: {
+    title: "投放建议书",
+    description:
+      "结构化投放文档：广告系列 → 广告组 → 关键词。可下载 JSON。请注意：这里不会自动创建任何广告，投放前请在 Google Ads 中手动建户。",
+    download: "下载 JSON",
+    campaigns: "广告系列",
+    adGroups: "广告组",
+    keywords: "关键词",
+    bid: "建议出价",
+    matchTypes: {
+      EXACT: "完全匹配",
+      PHRASE: "词组匹配",
+    },
+    negatives: "否词",
+    budget: "预算建议",
+    dailyBudget: "日预算",
+    totalTestBudget: "测试总预算",
+    notes: "说明",
+    empty: "暂无关键词建议。",
+  },
+  scale: {
+    title: "加量建议",
+    eligible: "该 offer 盈利模型为正，可考虑按以下幅度加预算。",
+    notEligible: "暂不建议加量。",
+    currentDaily: "当前日预算",
+    suggestedDaily: "建议日预算",
+    multiplier: "加量倍数",
+    advisory:
+      "仅为建议，不会自动执行。加量前请复核决策卡与 Kill Switch 状态。",
+  },
+};
+
+export const en = {
+  nav: {
+    strategy: "Strategy",
+  },
+  page: {
+    title: "AI Launch Strategy",
+    description:
+      "One-stop decision orchestration: policy decision, profit outlook, experiment state, monitoring and research — plus a downloadable campaign plan document (never auto-creates ads).",
+    offerLabel: "Offer",
+    generate: "Generate strategy",
+    generating: "Orchestrating, please wait…",
+    needOffer: "Pick an offer first.",
+    failed: "Strategy generation failed, please try again later.",
+    noResult: "Pick an offer and click “Generate strategy” to see the full orchestration.",
+    noTermsHint:
+      "No terms data for this offer yet: run a decision once on the “AI Decision” page (it fetches and stores the terms), then come back.",
+  },
+  decision: {
+    title: "Decision",
+    labels: {
+      RUN: "Run",
+      TEST: "Test with small budget",
+      MANUAL_REVIEW: "Manual review",
+      DO_NOT_RUN: "Do not run",
+    },
+    confidence: "Confidence",
+    riskScore: "Risk score",
+    profitScore: "Profit score",
+    policyScore: "Policy score",
+    breakEvenCpc: "Break-even CPC",
+    recommendedMaxCpc: "Recommended max CPC",
+    trafficMode: "Traffic mode",
+    trafficModes: {
+      LANDING_PAGE: "Landing page",
+      DIRECT_LINK: "Direct link",
+      UNKNOWN: "Unknown",
+    },
+    reasons: "Rationale",
+    manualChecks: "Manual checks",
+  },
+  profit: {
+    title: "Profit outlook",
+    scenarios: {
+      worst: "Worst",
+      base: "Base",
+      best: "Best",
+    },
+    cvr: "CVR",
+    cpc: "CPC",
+    clicks: "Clicks",
+    profit: "Profit",
+    breakEven: "Break-even CPC",
+    maxCpc: "Recommended max CPC",
+    loadFailed: "Failed to load the profit model.",
+    noModel: "No profit model yet.",
+  },
+  experiments: {
+    title: "Experiment advice",
+    empty: "No experiments for this offer yet.",
+    suggest:
+      "Consider creating a “landing page vs direct link” A/B experiment for this offer to validate the traffic mode with real data.",
+    name: "Name",
+    status: "Status",
+    winner: "Winner",
+    statuses: {
+      DRAFT: "Draft",
+      RUNNING: "Running",
+      COMPLETED: "Completed",
+      CANCELLED: "Cancelled",
+    },
+  },
+  killSwitch: {
+    title: "Monitoring / Kill Switch",
+    enabled: "Enabled",
+    disabled: "Disabled",
+    noConfig: "No kill-switch configured for this offer.",
+    maxSpend: "Max spend",
+    minProfit: "Min expected profit",
+    minCvr: "Min CVR",
+    maxPolicyRisk: "Max policy risk",
+    recentEvents: "Recent events",
+    noEvents: "No trigger events yet.",
+  },
+  traffic: {
+    title: "Real traffic (last 30 days)",
+    clicks: "Clicks",
+    conversions: "Conversions",
+    cvr: "CVR",
+    epc: "EPC",
+    topGeo: "Top geos",
+    topDevice: "Top devices",
+    noData: "No observed traffic yet.",
+  },
+  research: {
+    title: "Research findings",
+    noData: "No research findings yet (Phase 4 returned no data).",
+    score: "Score",
+    band: "Band",
+    classification: "Classification",
+  },
+  plan: {
+    title: "Campaign plan",
+    description:
+      "Structured launch document: campaigns → ad groups → keywords. Downloadable as JSON. Note: nothing is created automatically — build the account manually in Google Ads.",
+    download: "Download JSON",
+    campaigns: "Campaigns",
+    adGroups: "Ad groups",
+    keywords: "Keywords",
+    bid: "Suggested bid",
+    matchTypes: {
+      EXACT: "Exact",
+      PHRASE: "Phrase",
+    },
+    negatives: "Negatives",
+    budget: "Budget",
+    dailyBudget: "Daily budget",
+    totalTestBudget: "Total test budget",
+    notes: "Notes",
+    empty: "No keyword suggestions yet.",
+  },
+  scale: {
+    title: "Scale advice",
+    eligible: "This offer's base scenario is profitable; consider scaling budget as follows.",
+    notEligible: "Scaling is not recommended right now.",
+    currentDaily: "Current daily budget",
+    suggestedDaily: "Suggested daily budget",
+    multiplier: "Scale multiplier",
+    advisory:
+      "Advisory only — never auto-executed. Review the decision card and kill-switch state before scaling spend.",
+  },
+};
+
+export type StrategyDict = typeof zh;

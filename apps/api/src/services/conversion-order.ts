@@ -36,6 +36,7 @@ import {
 } from "../queue/execution-guard.js";
 import { classifyJobError } from "../queue/retry-policy.js";
 import type { JobProducer } from "../queue/producer.js";
+import { TrafficEventService } from "./traffic-events.js";
 
 const ORDER_SCOPE = "ORDER";
 const CONVERSION_SCOPE = "CONVERSION";
@@ -67,7 +68,12 @@ export class OrderConversionService {
     private readonly unitOfWork: UnitOfWork,
     private readonly audit: ConversionAuditWriter,
     private readonly syncJobs?: SyncJobRepository,
-    private readonly jobProducer?: JobProducer
+    private readonly jobProducer?: JobProducer,
+    /**
+     * Phase 2 — traffic event journal (optional). Best-effort only:
+     * event writes never change the Conversion result or throw into it.
+     */
+    private readonly trafficEvents?: TrafficEventService
   ) {}
 
   listOrders(tenantId: string, page?: number, pageSize?: number) {
@@ -304,7 +310,24 @@ export class OrderConversionService {
       return { conversion, order: updatedOrder };
     });
 
-    return { ...result, created: true };
+    const created = { ...result, created: true };
+    if (this.trafficEvents) {
+      // Phase 2 — traffic event journal. Best-effort: failures are logged
+      // inside the service and never affect the conversion result above.
+      // source = merchant business order id (real, merchant-related).
+      await this.trafficEvents.emitConversionChain({
+        tenantId: input.tenantId,
+        clickId: click.id,
+        conversionId: result.conversion.id,
+        trackingLinkId: click.trackingLinkId,
+        timestamp: result.conversion.conversionTime,
+        source: result.order.orderId,
+        conversionAction: action,
+        value: result.conversion.value ?? undefined,
+        currency: result.conversion.currency ?? undefined,
+      });
+    }
+    return created;
   }
 
   /**
@@ -394,7 +417,23 @@ export class OrderConversionService {
       return created;
     });
 
-    return { conversion, created: true };
+    const out = { conversion, created: true };
+    if (this.trafficEvents) {
+      // Phase 2 — traffic event journal. Best-effort: failures are logged
+      // inside the service and never affect the conversion result above.
+      await this.trafficEvents.emitConversionChain({
+        tenantId: input.tenantId,
+        clickId: click.id,
+        conversionId: conversion.id,
+        trackingLinkId: click.trackingLinkId,
+        timestamp: conversion.conversionTime,
+        source: null,
+        conversionAction: action,
+        value: conversion.value ?? undefined,
+        currency: conversion.currency ?? undefined,
+      });
+    }
+    return out;
   }
 
   async queueUpload(

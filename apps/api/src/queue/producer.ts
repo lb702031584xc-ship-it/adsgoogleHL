@@ -69,7 +69,10 @@ export class NoopJobProducer implements JobProducer {
  */
 export class BullMqJobProducer implements JobProducer {
   readonly mode = "redis" as const;
-  private readonly queues: Record<ImplementedQueueName, Queue>;
+  // SyncJob workflows only (urlChange/conversionUpload). trafficMonitor is
+  // schedule-owned (worker adds its own repeatable job); manual runs go
+  // through the route's synchronous scan, not this producer.
+  private readonly queues: Record<"urlChange" | "conversionUpload", Queue>;
   private closed = false;
 
   constructor(

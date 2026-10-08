@@ -97,6 +97,111 @@ export class DashboardQueryService {
     }
   }
 
+  /* ---------- Tenant-scoped (session auth) ---------- */
+
+  private tenantCtx(
+    tenantId: string,
+    integrationId: string
+  ): IntegrationAuthContext {
+    return {
+      integrationId,
+      tenantId,
+      googleAccountId: "",
+      tokenKeyId: "",
+    };
+  }
+
+  private async requireIntegrationForTenant(
+    tenantId: string,
+    integrationId: string
+  ) {
+    const integration = await this.scriptIntegrations.findByIdForTenant(
+      tenantId,
+      integrationId
+    );
+    if (!integration || integration.deletedAt) {
+      throw new NotFoundError("GoogleAdsScriptIntegration", integrationId);
+    }
+    return integration;
+  }
+
+  async listIntegrationsForTenant(
+    tenantId: string
+  ): Promise<{ items: DashboardIntegrationListItemDto[] }> {
+    const page = await this.scriptIntegrations.findByTenant(tenantId, {
+      page: 1,
+      pageSize: 100,
+    });
+    const items: DashboardIntegrationListItemDto[] = [];
+    for (const integration of page.items) {
+      if (integration.deletedAt) continue;
+      const ctx = this.tenantCtx(tenantId, integration.id);
+      const targets = await this.loadAllTargets(ctx);
+      const states = await this.resolveTargetSyncStates(ctx, targets);
+      const counts = aggregateSyncCounts(states);
+      items.push({
+        ...mapIntegrationCore(integration),
+        targetCount: targets.length,
+        syncStateSummary: counts.summary,
+        connectionHealth: aggregateConnectionHealth(
+          targets,
+          integration.status
+        ),
+        lastExecutionSummary: countLastExecutions(targets),
+      });
+    }
+    return { items };
+  }
+
+  async getIntegrationForTenant(
+    tenantId: string,
+    integrationId: string
+  ): Promise<DashboardIntegrationDetailDto> {
+    await this.requireIntegrationForTenant(tenantId, integrationId);
+    return this.getIntegration(this.tenantCtx(tenantId, integrationId), integrationId);
+  }
+
+  async listTargetsForTenant(
+    tenantId: string,
+    integrationId: string
+  ): Promise<{ items: DashboardTargetDto[] }> {
+    await this.requireIntegrationForTenant(tenantId, integrationId);
+    return this.listTargets(this.tenantCtx(tenantId, integrationId), integrationId);
+  }
+
+  async listLogsForTenant(
+    tenantId: string,
+    integrationId: string,
+    query: { page?: string | number; pageSize?: string | number }
+  ): Promise<DashboardLogsPage> {
+    await this.requireIntegrationForTenant(tenantId, integrationId);
+    return this.listLogs(this.tenantCtx(tenantId, integrationId), integrationId, query);
+  }
+
+  async getSummaryForTenant(tenantId: string): Promise<DashboardSummaryDto> {
+    const page = await this.scriptIntegrations.findByTenant(tenantId, {
+      page: 1,
+      pageSize: 100,
+    });
+    const active = page.items.filter((i) => !i.deletedAt);
+    if (active.length === 0) {
+      return {
+        integration: { integrationId: "", name: "", status: "INACTIVE" as never },
+        targets: { total: 0, synced: 0, outOfSync: 0, neverApplied: 0 },
+        health: { connection: "UNKNOWN" as never, lastExecution: null },
+        versions: {
+          currentDesiredVersion: null,
+          appliedTargets: 0,
+          pendingTargets: 0,
+        },
+        recentLogs: [],
+      };
+    }
+    // Summary aggregates across the tenant's first integration for compat;
+    // listIntegrationsForTenant gives the full per-integration breakdown.
+    return this.getSummary(this.tenantCtx(tenantId, active[0].id));
+  }
+
   async listIntegrations(
     ctx: IntegrationAuthContext
   ): Promise<{ items: DashboardIntegrationListItemDto[] }> {

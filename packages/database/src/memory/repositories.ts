@@ -1310,9 +1310,9 @@ export function createSeededMemoryRepositories(): MemoryRepositories {
   const urlChangeRequests = toMap(ds.urlChangeRequests);
   const syncJobs = toMap(ds.syncJobs);
   const auditLogs = toMap(ds.auditLogs);
-  const scriptIntegrations = toMap(ds.scriptIntegrations);
-  const scriptSyncTargets = toMap(ds.scriptSyncTargets);
-  const scriptSyncLogs = toMap(ds.scriptSyncLogs);
+  const scriptIntegrations = new Map<string, GoogleAdsScriptIntegration>();
+  const scriptSyncTargets = new Map<string, ScriptSyncTarget>();
+  const scriptSyncLogs = new Map<string, ScriptSyncLog>();
 
   const transactionalStores: InMemoryTransactionalStores = {
     urlVersions,

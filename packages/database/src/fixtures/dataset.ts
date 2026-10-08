@@ -7,12 +7,9 @@ import type {
   Click,
   Conversion,
   GoogleAccount,
-  GoogleAdsScriptIntegration,
   LandingPage,
   Offer,
   Order,
-  ScriptSyncLog,
-  ScriptSyncTarget,
   SyncJob,
   Tenant,
   TrackingLink,
@@ -23,8 +20,6 @@ import type {
 } from "@adlinklab/domain";
 import {
   FIXTURE_NOW,
-  FIXTURE_SI_TOKEN_A,
-  FIXTURE_SI_TOKEN_B,
   FIXTURE_T1,
   FIXTURE_T2,
   FIXTURE_T3,
@@ -58,10 +53,6 @@ export interface FixtureDataset {
   urlChangeRequests: UrlChangeRequest[];
   syncJobs: SyncJob[];
   auditLogs: AuditLog[];
-  /** Phase 13.4 Track B */
-  scriptIntegrations: GoogleAdsScriptIntegration[];
-  scriptSyncTargets: ScriptSyncTarget[];
-  scriptSyncLogs: ScriptSyncLog[];
 }
 
 function googleAccount(
@@ -351,26 +342,7 @@ export function buildFixtureDataset(): FixtureDataset {
     },
   ];
 
-  const trackingLinkOffers: TrackingLinkOffer[] = [
-    {
-      id: TenantA.trackingLinkOffer,
-      tenantId: TenantA.id,
-      trackingLinkId: TenantA.trackingA,
-      offerId: TenantA.offerA,
-      priority: 10,
-      isFallback: false,
-      ...stamp(),
-    },
-    {
-      id: TenantB.trackingLinkOffer,
-      tenantId: TenantB.id,
-      trackingLinkId: TenantB.tracking,
-      offerId: TenantB.offer,
-      priority: 20,
-      isFallback: false,
-      ...stamp(),
-    },
-  ];
+  const trackingLinkOffers: TrackingLinkOffer[] = [];
 
   const landingPages: LandingPage[] = [
     {
@@ -940,98 +912,6 @@ export function buildFixtureDataset(): FixtureDataset {
     },
   ];
 
-  /**
-   * Phase 13.4 Track B — Script Integration fixtures.
-   * appliedVersion matches existing ACTIVE UrlVersion for the Ad (no new UrlVersion).
-   * desiredVersion is cache/projection only — ACTIVE UrlVersion remains Desired Authority.
-   */
-  const scriptIntegrations: GoogleAdsScriptIntegration[] = [
-    {
-      id: TenantA.scriptIntegration,
-      tenantId: TenantA.id,
-      googleAccountId: TenantA.account,
-      name: "Fixture Script Integration A",
-      status: "ACTIVE",
-      tokenKeyId: FIXTURE_SI_TOKEN_A.tokenKeyId,
-      tokenPrefix: FIXTURE_SI_TOKEN_A.tokenPrefix,
-      tokenHash: FIXTURE_SI_TOKEN_A.tokenHash,
-      configGeneration: 1,
-      lastSeenAt: FIXTURE_T1,
-      ...stamp(FIXTURE_T1),
-    },
-    {
-      id: TenantB.scriptIntegration,
-      tenantId: TenantB.id,
-      googleAccountId: TenantB.account,
-      name: "Fixture Script Integration B",
-      status: "ACTIVE",
-      tokenKeyId: FIXTURE_SI_TOKEN_B.tokenKeyId,
-      tokenPrefix: FIXTURE_SI_TOKEN_B.tokenPrefix,
-      tokenHash: FIXTURE_SI_TOKEN_B.tokenHash,
-      configGeneration: 1,
-      lastSeenAt: FIXTURE_T1,
-      ...stamp(FIXTURE_T1),
-    },
-  ];
-
-  const scriptSyncTargets: ScriptSyncTarget[] = [
-    {
-      id: TenantA.scriptSyncTarget,
-      tenantId: TenantA.id,
-      integrationId: TenantA.scriptIntegration,
-      entityType: "AD",
-      entityId: TenantA.adA1,
-      googleAdId: "ad-3001",
-      campaignId: TenantA.campaignA,
-      adGroupId: TenantA.adGroupA1,
-      // Cache only — ACTIVE UrlVersion for adA1 is version 2 (urlAdV2)
-      desiredVersion: 2,
-      appliedVersion: 2,
-      lastSyncAt: FIXTURE_T2,
-      lastSuccessAt: FIXTURE_T2,
-      syncState: "SYNCED",
-      connectionHealth: "CONNECTED",
-      lastExecution: "SUCCESS",
-      ...stamp(FIXTURE_T2),
-    },
-    {
-      id: TenantB.scriptSyncTarget,
-      tenantId: TenantB.id,
-      integrationId: TenantB.scriptIntegration,
-      entityType: "AD",
-      entityId: TenantB.ad,
-      googleAdId: "mock-ad-b-001",
-      campaignId: TenantB.campaign,
-      adGroupId: TenantB.adGroup,
-      desiredVersion: 1,
-      appliedVersion: 1,
-      lastSyncAt: FIXTURE_T2,
-      lastSuccessAt: FIXTURE_T2,
-      syncState: "SYNCED",
-      connectionHealth: "CONNECTED",
-      lastExecution: "SUCCESS",
-      ...stamp(FIXTURE_T2),
-    },
-  ];
-
-  const scriptSyncLogs: ScriptSyncLog[] = [
-    {
-      id: TenantA.scriptSyncLog,
-      tenantId: TenantA.id,
-      integrationId: TenantA.scriptIntegration,
-      targetId: TenantA.scriptSyncTarget,
-      desiredVersion: 2,
-      reportedAppliedVersion: 2,
-      result: "SUCCESS",
-      errorCode: undefined,
-      errorMessage: undefined,
-      requestId: "req-script-sync-seed-a1",
-      idempotencyScope: "SCRIPT_SYNC_RESULT",
-      idempotencyKey: "script-sync-seed-success-a1",
-      createdAt: FIXTURE_T2,
-    },
-  ];
-
   return {
     tenants,
     users,
@@ -1051,9 +931,6 @@ export function buildFixtureDataset(): FixtureDataset {
     urlChangeRequests,
     syncJobs,
     auditLogs,
-    scriptIntegrations,
-    scriptSyncTargets,
-    scriptSyncLogs,
   };
 }
 
@@ -1073,8 +950,6 @@ export {
   TenantA,
   TenantB,
   FIXTURE_NOW,
-  FIXTURE_SI_TOKEN_A,
-  FIXTURE_SI_TOKEN_B,
   MOCK_CUSTOMER_A,
   MOCK_CUSTOMER_B,
 } from "./ids.js";

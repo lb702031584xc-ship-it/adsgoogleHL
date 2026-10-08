@@ -14,15 +14,14 @@ import {
   revokeIntegrationAction,
   rotateTokenAction,
 } from "@/lib/api/admin-script-actions";
-
-const SECURITY_NOTICE =
-  "This script contains an integration credential. Store it securely and do not share it publicly.";
+import { useDict } from "@/i18n/use-dict";
 
 export function IntegrationDetailClient(props: {
   integration: AdminIntegration;
   targets: AdminTarget[];
   ads: Array<{ id: string; name: string; googleAdId: string }>;
 }) {
+  const t = useDict();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [onceToken, setOnceToken] = useState<string | null>(null);
@@ -42,7 +41,7 @@ export function IntegrationDetailClient(props: {
       try {
         await fn();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Action failed");
+        setError(e instanceof Error ? e.message : t.integrations.detail.actionFailed);
       }
     });
   }
@@ -56,39 +55,38 @@ export function IntegrationDetailClient(props: {
       ) : null}
 
       <section className="space-y-3">
-        <h2 className="font-display text-2xl font-semibold text-ink">Overview</h2>
+        <h2 className="font-display text-2xl font-semibold text-ink">{t.integrations.detail.overview}</h2>
         <dl className="grid gap-3 sm:grid-cols-2 text-sm">
           <div>
-            <dt className="text-ink/50">Name</dt>
+            <dt className="text-ink/50">{t.common.misc.name}</dt>
             <dd className="font-medium">{props.integration.name}</dd>
           </div>
           <div>
-            <dt className="text-ink/50">Status</dt>
+            <dt className="text-ink/50">{t.common.misc.status}</dt>
             <dd className="font-medium">{props.integration.status}</dd>
           </div>
           <div>
-            <dt className="text-ink/50">Google Account</dt>
+            <dt className="text-ink/50">{t.integrations.detail.fields.googleAccount}</dt>
             <dd className="font-mono text-xs">{props.integration.googleAccountId}</dd>
           </div>
           <div>
-            <dt className="text-ink/50">Token status</dt>
+            <dt className="text-ink/50">{t.integrations.detail.fields.tokenStatus}</dt>
             <dd>
-              {props.integration.tokenStatus} · prefix{" "}
+              {props.integration.tokenStatus} · {t.integrations.detail.prefix}{" "}
               <span className="font-mono">{props.integration.tokenPrefix}…</span>
             </dd>
           </div>
           <div>
-            <dt className="text-ink/50">Last seen</dt>
+            <dt className="text-ink/50">{t.integrations.detail.fields.lastSeen}</dt>
             <dd>{props.integration.lastSeenAt ?? "—"}</dd>
           </div>
           <div>
-            <dt className="text-ink/50">Targets</dt>
+            <dt className="text-ink/50">{t.integrations.detail.fields.targets}</dt>
             <dd>{props.integration.targetCount}</dd>
           </div>
         </dl>
         <p className="text-xs text-ink/50">
-          Script execution schedule is controlled in Google Ads Scripts — this
-          lab does not invent a next-execution time.
+          {t.integrations.detail.scheduleNote}
         </p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -107,7 +105,7 @@ export function IntegrationDetailClient(props: {
               })
             }
           >
-            Rotate Token
+            {t.integrations.detail.rotateToken}
           </button>
           <button
             type="button"
@@ -121,7 +119,7 @@ export function IntegrationDetailClient(props: {
               })
             }
           >
-            Disable
+            {t.integrations.detail.disable}
           </button>
           <button
             type="button"
@@ -135,7 +133,7 @@ export function IntegrationDetailClient(props: {
               })
             }
           >
-            Enable
+            {t.integrations.detail.enable}
           </button>
           <button
             type="button"
@@ -149,29 +147,29 @@ export function IntegrationDetailClient(props: {
               })
             }
           >
-            Revoke
+            {t.integrations.detail.revoke}
           </button>
         </div>
         {onceToken ? (
           <div className="rounded-lg border border-amber-400/50 bg-amber-50 p-3 text-sm">
-            <p className="font-medium">New token (shown once)</p>
+            <p className="font-medium">{t.integrations.detail.newTokenTitle}</p>
             <pre className="mt-2 overflow-x-auto break-all">{onceToken}</pre>
             <button
               type="button"
               className="mt-2 text-sm underline"
               onClick={() => void navigator.clipboard.writeText(onceToken)}
             >
-              Copy Token
+              {t.integrations.detail.copyToken}
             </button>
           </div>
         ) : null}
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-display text-2xl font-semibold text-ink">Targets</h2>
+        <h2 className="font-display text-2xl font-semibold text-ink">{t.integrations.detail.targets}</h2>
         <div className="flex flex-wrap items-end gap-2">
           <label className="text-sm">
-            Ad
+            {t.integrations.detail.ad}
             <select
               className="ml-2 rounded border border-ink/15 px-2 py-1"
               value={adId}
@@ -199,31 +197,31 @@ export function IntegrationDetailClient(props: {
               })
             }
           >
-            Attach Ad
+            {t.integrations.detail.attachAd}
           </button>
         </div>
         <div className="overflow-x-auto rounded-xl border border-ink/10">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-ink/5 text-ink/60">
               <tr>
-                <th className="px-3 py-2">Google Ad ID</th>
-                <th className="px-3 py-2">Desired</th>
-                <th className="px-3 py-2">Applied</th>
-                <th className="px-3 py-2">Sync</th>
-                <th className="px-3 py-2">Health</th>
-                <th className="px-3 py-2">Last exec</th>
+                <th className="px-3 py-2">{t.integrations.detail.columns.googleAdId}</th>
+                <th className="px-3 py-2">{t.integrations.detail.columns.desired}</th>
+                <th className="px-3 py-2">{t.integrations.detail.columns.applied}</th>
+                <th className="px-3 py-2">{t.integrations.detail.columns.sync}</th>
+                <th className="px-3 py-2">{t.integrations.detail.columns.health}</th>
+                <th className="px-3 py-2">{t.integrations.detail.columns.lastExec}</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
-              {props.targets.map((t) => (
-                <tr key={t.targetId} className="border-t border-ink/10">
-                  <td className="px-3 py-2 font-mono text-xs">{t.googleAdId}</td>
-                  <td className="px-3 py-2">{t.desiredVersion ?? "—"}</td>
-                  <td className="px-3 py-2">{t.appliedVersion ?? "—"}</td>
-                  <td className="px-3 py-2">{t.syncState}</td>
-                  <td className="px-3 py-2">{t.connectionHealth}</td>
-                  <td className="px-3 py-2">{t.lastExecution ?? "—"}</td>
+              {props.targets.map((target) => (
+                <tr key={target.targetId} className="border-t border-ink/10">
+                  <td className="px-3 py-2 font-mono text-xs">{target.googleAdId}</td>
+                  <td className="px-3 py-2">{target.desiredVersion ?? "—"}</td>
+                  <td className="px-3 py-2">{target.appliedVersion ?? "—"}</td>
+                  <td className="px-3 py-2">{target.syncState}</td>
+                  <td className="px-3 py-2">{target.connectionHealth}</td>
+                  <td className="px-3 py-2">{target.lastExecution ?? "—"}</td>
                   <td className="px-3 py-2">
                     <button
                       type="button"
@@ -233,14 +231,14 @@ export function IntegrationDetailClient(props: {
                         run(async () => {
                           const r = await detachTargetAction({
                             integrationId: id,
-                            targetId: t.targetId,
+                            targetId: target.targetId,
                           });
                           if (!r.ok) setError(r.error);
                           else window.location.reload();
                         })
                       }
                     >
-                      Detach
+                      {t.integrations.detail.detach}
                     </button>
                   </td>
                 </tr>
@@ -248,7 +246,7 @@ export function IntegrationDetailClient(props: {
               {props.targets.length === 0 ? (
                 <tr>
                   <td className="px-3 py-4 text-ink/50" colSpan={7}>
-                    No targets attached.
+                    {t.integrations.detail.noTargets}
                   </td>
                 </tr>
               ) : null}
@@ -259,15 +257,15 @@ export function IntegrationDetailClient(props: {
 
       <section className="space-y-3">
         <h2 className="font-display text-2xl font-semibold text-ink">
-          Google Ads Script
+          {t.integrations.detail.scriptTitle}
         </h2>
         <p className="text-sm text-ink/70">
-          Integration: <strong>{props.integration.name}</strong> · Status:{" "}
+          {t.integrations.detail.scriptIntegration}: <strong>{props.integration.name}</strong> · {t.integrations.detail.scriptStatus}:{" "}
           {props.integration.status}
-          {scriptMeta ? ` · Version ${scriptMeta.scriptVersion}` : ""}
+          {scriptMeta ? t.integrations.detail.scriptVersion(scriptMeta.scriptVersion) : ""}
         </p>
         <label className="block text-sm">
-          Integration token (from create/rotate — kept in memory only)
+          {t.integrations.detail.tokenLabel}
           <input
             type="password"
             autoComplete="off"
@@ -300,12 +298,12 @@ export function IntegrationDetailClient(props: {
             })
           }
         >
-          Generate Script
+          {t.integrations.detail.generateScript}
         </button>
         {source ? (
           <div className="space-y-2">
             <p className="rounded-lg border border-amber-400/40 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-              {SECURITY_NOTICE}
+              {t.integrations.detail.securityNotice}
             </p>
             <textarea
               readOnly
@@ -321,7 +319,7 @@ export function IntegrationDetailClient(props: {
                   setCopiedScript(true);
                 }}
               >
-                {copiedScript ? "Copied" : "Copy Script"}
+                {copiedScript ? t.common.actions.copied : t.integrations.detail.copyScript}
               </button>
               <button
                 type="button"
@@ -331,7 +329,7 @@ export function IntegrationDetailClient(props: {
                   setScriptMeta(null);
                 }}
               >
-                Clear
+                {t.integrations.detail.clear}
               </button>
             </div>
           </div>
