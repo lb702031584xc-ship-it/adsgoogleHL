@@ -57,6 +57,7 @@ const SETTING_BASE_URL = "llm.baseUrl";
 const SETTING_MODEL = "llm.model";
 const SETTING_API_KEY_ENC = "llm.apiKeyEnc";
 const SETTING_OWNED_DOMAINS = "compliance.ownedDomains";
+const SETTING_AMAZON_PAAPI_ENC = "amazon.paapiEnc";
 
 async function requireSession(
   deps: AiRouteDeps,
@@ -88,6 +89,8 @@ interface LlmSettings {
   apiKeyEnc?: string;
   /** Advertiser-owned domains for the direct-link compliance checker. */
   ownedDomains?: string[];
+  /** Encrypted Amazon PA-API credentials (AccessKey|SecretKey|PartnerTag|Region). */
+  amazonPaapiEnc?: string;
 }
 
 async function readSettings(prisma: PrismaClient): Promise<LlmSettings> {
@@ -97,6 +100,7 @@ async function readSettings(prisma: PrismaClient): Promise<LlmSettings> {
     if (r.key === SETTING_BASE_URL) out.baseUrl = r.value;
     else if (r.key === SETTING_MODEL) out.model = r.value;
     else if (r.key === SETTING_API_KEY_ENC) out.apiKeyEnc = r.value;
+    else if (r.key === SETTING_AMAZON_PAAPI_ENC) out.amazonPaapiEnc = r.value;
     else if (r.key === SETTING_OWNED_DOMAINS) {
       out.ownedDomains = r.value
         .split(",")
@@ -145,6 +149,7 @@ export async function registerAiRoutes(
       model: s.model ?? "",
       hasKey: !!s.apiKeyEnc,
       ownedDomains: s.ownedDomains ?? [],
+      hasAmazonPaapi: !!s.amazonPaapiEnc,
     };
   });
 
@@ -156,6 +161,7 @@ export async function registerAiRoutes(
       model?: unknown;
       apiKey?: unknown;
       ownedDomains?: unknown;
+      amazonPaapi?: unknown;
     };
 
     const updates: Record<string, string> = {};
@@ -194,6 +200,29 @@ export async function registerAiRoutes(
         if (!normalized.includes(n)) normalized.push(n);
       }
       updates[SETTING_OWNED_DOMAINS] = normalized.join(",");
+    }
+    if (body.amazonPaapi !== undefined) {
+      // Amazon PA-API credentials: { accessKey, secretKey, partnerTag, region }
+      // Empty object clears the credentials.
+      if (body.amazonPaapi !== null && typeof body.amazonPaapi === "object") {
+        const p = body.amazonPaapi as Record<string, unknown>;
+        const accessKey = asTrimmedString(p.accessKey);
+        const secretKey = asTrimmedString(p.secretKey);
+        const partnerTag = asTrimmedString(p.partnerTag);
+        const region = asTrimmedString(p.region) || "us-east-1";
+        if (accessKey && secretKey && partnerTag) {
+          const pepper = assertAiSettingsPepperConfigured();
+          const combined = [accessKey, secretKey, partnerTag, region].join("|");
+          updates[SETTING_AMAZON_PAAPI_ENC] = encryptSecret(combined, pepper);
+        } else if (!accessKey && !secretKey && !partnerTag) {
+          // All empty: clear the credentials
+          await prisma.aiSetting.deleteMany({ where: { key: SETTING_AMAZON_PAAPI_ENC } });
+        } else {
+          throw new ValidationError("Amazon PA-API requires accessKey, secretKey, and partnerTag");
+        }
+      } else {
+        throw new ValidationError("amazonPaapi must be an object");
+      }
     }
     if (Object.keys(updates).length === 0) {
       throw new ValidationError("No settings provided");

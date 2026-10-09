@@ -74,6 +74,7 @@ export interface AiSettings {
   model: string;
   hasKey: boolean;
   ownedDomains: string[];
+  hasAmazonPaapi: boolean;
 }
 
 export interface AnalyzeInput {
@@ -92,6 +93,12 @@ export interface SaveSettingsInput {
   model?: string;
   apiKey?: string;
   ownedDomains?: string[];
+  amazonPaapi?: {
+    accessKey: string;
+    secretKey: string;
+    partnerTag: string;
+    region: string;
+  } | null;
 }
 
 export type RestrictionValue = "allowed" | "forbidden" | "restricted" | "unknown";

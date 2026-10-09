@@ -20,6 +20,11 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
   const [model, setModel] = useState(initial.model);
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(initial.hasKey);
+  const [amazonAccessKey, setAmazonAccessKey] = useState("");
+  const [amazonSecretKey, setAmazonSecretKey] = useState("");
+  const [amazonPartnerTag, setAmazonPartnerTag] = useState("");
+  const [amazonRegion, setAmazonRegion] = useState("us-east-1");
+  const [hasAmazonPaapi, setHasAmazonPaapi] = useState(initial.hasAmazonPaapi);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,16 +47,32 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
     setMessage(null);
     setError(null);
     try {
+      const amazonPaapi =
+        amazonAccessKey.trim() || amazonSecretKey.trim() || amazonPartnerTag.trim()
+          ? {
+              accessKey: amazonAccessKey.trim(),
+              secretKey: amazonSecretKey.trim(),
+              partnerTag: amazonPartnerTag.trim(),
+              region: amazonRegion.trim() || "us-east-1",
+            }
+          : undefined;
       const res = await saveAiSettingsAction({
         baseUrl: baseUrl.trim() || undefined,
         model: model.trim() || undefined,
         apiKey: apiKey.trim() || undefined,
+        amazonPaapi,
       });
       if (res.ok) {
         setMessage(t.ai.admin.settings.saved);
         if (apiKey.trim()) {
           setHasKey(true);
           setApiKey("");
+        }
+        if (amazonPaapi) {
+          setHasAmazonPaapi(true);
+          setAmazonAccessKey("");
+          setAmazonSecretKey("");
+          setAmazonPartnerTag("");
         }
       } else {
         setError(res.error);
@@ -160,6 +181,79 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
               autoComplete="off"
               className={inputClass}
             />
+          </div>
+        </div>
+
+        <div className="mt-6 border-t border-ink/10 pt-5">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-ink">
+              Amazon PA-API
+            </h3>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                hasAmazonPaapi
+                  ? "bg-green-100 text-green-800"
+                  : "bg-ink/10 text-ink/60"
+              }`}
+            >
+              {hasAmazonPaapi ? "已配置" : "未配置"}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-ink/55">
+            用于 Amazon 自动选品。在 Amazon Associates 后台申请 PA-API 后填入。
+          </p>
+          <div className="mt-4 space-y-4">
+            <div>
+              <label className={labelClass} htmlFor="amazon-access-key">
+                Access Key
+              </label>
+              <input
+                id="amazon-access-key"
+                type="password"
+                value={amazonAccessKey}
+                onChange={(e) => setAmazonAccessKey(e.target.value)}
+                autoComplete="off"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="amazon-secret-key">
+                Secret Key
+              </label>
+              <input
+                id="amazon-secret-key"
+                type="password"
+                value={amazonSecretKey}
+                onChange={(e) => setAmazonSecretKey(e.target.value)}
+                autoComplete="off"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="amazon-partner-tag">
+                Partner Tag（联盟 ID）
+              </label>
+              <input
+                id="amazon-partner-tag"
+                value={amazonPartnerTag}
+                onChange={(e) => setAmazonPartnerTag(e.target.value)}
+                placeholder="例如 yourtag-20"
+                autoComplete="off"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="amazon-region">
+                Region
+              </label>
+              <input
+                id="amazon-region"
+                value={amazonRegion}
+                onChange={(e) => setAmazonRegion(e.target.value)}
+                placeholder="us-east-1"
+                className={inputClass}
+              />
+            </div>
           </div>
         </div>
 

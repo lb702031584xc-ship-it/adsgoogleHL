@@ -6,8 +6,8 @@
  * - GET  /api/v1/amazon/discoveries/:runId — 某次发现的产品列表
  * - POST /api/v1/amazon/discoveries/:runId/import — 导入选中的产品为 Offer
  *
- * 凭证从 AiSetting 加密字段读取（key: amazon_paapi_key），
- * 格式：AccessKey|SecretKey|PartnerTag|Region。
+ * 凭证从 AiSetting 加密字段读取（key: amazon.paapiEnc），
+ * 格式：AccessKey|SecretKey|PartnerTag|Region（AES 加密存储）。
  */
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -27,6 +27,7 @@ import {
   getDiscoveryProducts,
   validateCriteria,
 } from "../services/amazon-discovery.js";
+import { decryptSecret, assertAiSettingsPepperConfigured } from "../ai/crypto.js";
 
 interface Deps {
   prisma: PrismaClient;
@@ -51,11 +52,18 @@ async function getPaApiKey(
 ): Promise<string | null> {
   void tenantId;
   const setting = await prisma.aiSetting.findUnique({
-    where: { key: "amazon_paapi_key" },
+    where: { key: "amazon.paapiEnc" },
     select: { value: true },
   });
-  // value 是加密存储的，这里假设已解密（实际由 network-crypto 处理）
-  return setting?.value ?? process.env.AMAZON_PAAPI_KEY ?? null;
+  if (setting?.value) {
+    try {
+      const pepper = assertAiSettingsPepperConfigured();
+      return decryptSecret(setting.value, pepper);
+    } catch {
+      return null;
+    }
+  }
+  return process.env.AMAZON_PAAPI_KEY ?? null;
 }
 
 export function registerAmazonDiscoveryRoutes(
@@ -80,7 +88,7 @@ export function registerAmazonDiscoveryRoutes(
     const apiKey = await getPaApiKey(prisma, session.tenantId);
     if (!apiKey) {
       throw new ValidationError(
-        "未配置 Amazon PA-API 凭证。请先在 AI 设置中配置 amazon_paapi_key（格式：AccessKey|SecretKey|PartnerTag|Region）"
+        "未配置 Amazon PA-API 凭证。请在 管理 → AI 设置 中配置 Amazon PA-API（Access Key、Secret Key、Partner Tag、Region）"
       );
     }
     const criteria = validateCriteria(request.body ?? {});
