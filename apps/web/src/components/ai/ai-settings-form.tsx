@@ -25,6 +25,11 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
   const [amazonPartnerTag, setAmazonPartnerTag] = useState("");
   const [amazonRegion, setAmazonRegion] = useState("us-east-1");
   const [hasAmazonPaapi, setHasAmazonPaapi] = useState(initial.hasAmazonPaapi);
+  const [similarwebKey, setSimilarwebKey] = useState("");
+  const [dataforseoLogin, setDataforseoLogin] = useState("");
+  const [dataforseoPassword, setDataforseoPassword] = useState("");
+  const [hasSimilarweb, setHasSimilarweb] = useState(initial.hasTrafficSimilarweb === true);
+  const [hasDataforseo, setHasDataforseo] = useState(initial.hasTrafficDataforseo === true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +66,14 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
         model: model.trim() || undefined,
         apiKey: apiKey.trim() || undefined,
         amazonPaapi,
+        traffic:
+          similarwebKey.trim() || dataforseoLogin.trim() || dataforseoPassword.trim()
+            ? {
+                similarwebKey: similarwebKey.trim() || undefined,
+                dataforseoLogin: dataforseoLogin.trim() || undefined,
+                dataforseoPassword: dataforseoPassword.trim() || undefined,
+              }
+            : undefined,
       });
       if (res.ok) {
         setMessage(t.ai.admin.settings.saved);
@@ -73,6 +86,15 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
           setAmazonAccessKey("");
           setAmazonSecretKey("");
           setAmazonPartnerTag("");
+        }
+        if (similarwebKey.trim()) {
+          setHasSimilarweb(true);
+          setSimilarwebKey("");
+        }
+        if (dataforseoLogin.trim() || dataforseoPassword.trim()) {
+          setHasDataforseo(true);
+          setDataforseoLogin("");
+          setDataforseoPassword("");
         }
       } else {
         setError(res.error);
@@ -253,6 +275,74 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
                 placeholder="us-east-1"
                 className={inputClass}
               />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 border-t border-ink/10 pt-5">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-ink">
+              {t.ai.admin.settings.traffic.title}
+            </h3>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                hasSimilarweb || hasDataforseo
+                  ? "bg-green-100 text-green-800"
+                  : "bg-ink/10 text-ink/60"
+              }`}
+            >
+              {hasSimilarweb || hasDataforseo
+                ? t.ai.admin.settings.configuredBadge
+                : t.ai.admin.settings.notConfiguredBadge}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-ink/55">
+            {t.ai.admin.settings.traffic.hint}
+          </p>
+          <div className="mt-4 space-y-4">
+            <div>
+              <label className={labelClass} htmlFor="traffic-similarweb-key">
+                {t.ai.admin.settings.traffic.similarwebKey}
+              </label>
+              <input
+                id="traffic-similarweb-key"
+                type="password"
+                value={similarwebKey}
+                onChange={(e) => setSimilarwebKey(e.target.value)}
+                autoComplete="off"
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-ink/55">
+                {t.ai.admin.settings.traffic.similarwebHelp}
+              </p>
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="traffic-dataforseo-login">
+                {t.ai.admin.settings.traffic.dataforseoLogin}
+              </label>
+              <input
+                id="traffic-dataforseo-login"
+                value={dataforseoLogin}
+                onChange={(e) => setDataforseoLogin(e.target.value)}
+                autoComplete="off"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="traffic-dataforseo-password">
+                {t.ai.admin.settings.traffic.dataforseoPassword}
+              </label>
+              <input
+                id="traffic-dataforseo-password"
+                type="password"
+                value={dataforseoPassword}
+                onChange={(e) => setDataforseoPassword(e.target.value)}
+                autoComplete="off"
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-ink/55">
+                {t.ai.admin.settings.traffic.dataforseoHelp}
+              </p>
             </div>
           </div>
         </div>

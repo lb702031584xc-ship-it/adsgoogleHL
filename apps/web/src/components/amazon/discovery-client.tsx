@@ -6,6 +6,8 @@ import type { AmazonDiscoveryDict } from "@/i18n/dict/amazon-discovery";
 import {
   runAmazonDiscoveryAction,
   importAmazonProductsAction,
+  getTrafficThresholdsAction,
+  saveTrafficThresholdsAction,
 } from "@/lib/api/amazon-actions";
 import type { AmazonScoredProduct } from "@/lib/api/amazon-types";
 
@@ -25,6 +27,15 @@ export function AmazonDiscoveryClient({ dict }: { dict: AmazonDiscoveryDict }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // 流量门阈值（加载前展示文档默认值，展开后从 GET 回填）
+  const [thresholdsOpen, setThresholdsOpen] = useState(false);
+  const [thresholdsLoaded, setThresholdsLoaded] = useState(false);
+  const [thOfficialVisits, setThOfficialVisits] = useState("50000");
+  const [thBrandInterest, setThBrandInterest] = useState("25");
+  const [thKeywordInterest, setThKeywordInterest] = useState("25");
+  const [savingThresholds, setSavingThresholds] = useState(false);
+  const [thresholdsMsg, setThresholdsMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   const inputClass =
     "w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm text-ink placeholder:text-ink/35 focus:border-signal focus:outline-none";
@@ -93,6 +104,58 @@ export function AmazonDiscoveryClient({ dict }: { dict: AmazonDiscoveryDict }) {
       setError(e instanceof Error ? e.message : "导入失败");
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function loadThresholds() {
+    const res = await getTrafficThresholdsAction();
+    if (res.ok) {
+      setThOfficialVisits(String(res.data.officialSiteMonthlyVisits));
+      setThBrandInterest(String(res.data.brandInterest));
+      setThKeywordInterest(String(res.data.keywordInterest));
+    }
+    // 加载失败时保留默认 50000 / 25 / 25
+  }
+
+  function toggleThresholds() {
+    const next = !thresholdsOpen;
+    setThresholdsOpen(next);
+    if (next && !thresholdsLoaded) {
+      setThresholdsLoaded(true);
+      void loadThresholds();
+    }
+  }
+
+  async function onSaveThresholds() {
+    const officialSiteMonthlyVisits = parseInt(thOfficialVisits, 10);
+    const brandInterest = parseInt(thBrandInterest, 10);
+    const keywordInterest = parseInt(thKeywordInterest, 10);
+    const valid =
+      Number.isFinite(officialSiteMonthlyVisits) && officialSiteMonthlyVisits >= 0 &&
+      Number.isFinite(brandInterest) && brandInterest >= 0 && brandInterest <= 100 &&
+      Number.isFinite(keywordInterest) && keywordInterest >= 0 && keywordInterest <= 100;
+    if (!valid) {
+      setThresholdsMsg({ text: d.thresholdsSaveFailed, ok: false });
+      return;
+    }
+    setSavingThresholds(true);
+    setThresholdsMsg(null);
+    try {
+      const res = await saveTrafficThresholdsAction({
+        officialSiteMonthlyVisits,
+        brandInterest,
+        keywordInterest,
+      });
+      if (!res.ok) {
+        setThresholdsMsg({ text: res.error, ok: false });
+        return;
+      }
+      setThOfficialVisits(String(res.data.officialSiteMonthlyVisits));
+      setThBrandInterest(String(res.data.brandInterest));
+      setThKeywordInterest(String(res.data.keywordInterest));
+      setThresholdsMsg({ text: d.thresholdsSaved, ok: true });
+    } finally {
+      setSavingThresholds(false);
     }
   }
 
@@ -174,6 +237,73 @@ export function AmazonDiscoveryClient({ dict }: { dict: AmazonDiscoveryDict }) {
         >
           {discovering ? d.discovering : d.discover}
         </button>
+
+        <div className="mt-5 rounded-xl border border-dashed border-signal/60 bg-signal/5">
+          <button
+            type="button"
+            onClick={toggleThresholds}
+            aria-expanded={thresholdsOpen}
+            className="flex w-full items-center justify-between px-4 py-3 text-left"
+          >
+            <span className="text-sm font-semibold text-ink">🚦 {d.thresholdsTitle}</span>
+            <span className="text-xs text-ink/60">
+              {thresholdsOpen ? `▲ ${d.collapse}` : `▼ ${d.expand}`}
+            </span>
+          </button>
+          {thresholdsOpen && (
+            <div className="border-t border-signal/20 px-4 pb-4 pt-4">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div>
+                  <label className={labelClass}>{d.officialSiteVisitsLabel}</label>
+                  <input
+                    inputMode="numeric"
+                    value={thOfficialVisits}
+                    onChange={(e) => setThOfficialVisits(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>{d.brandInterestLabel}</label>
+                  <input
+                    inputMode="numeric"
+                    value={thBrandInterest}
+                    onChange={(e) => setThBrandInterest(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>{d.keywordInterestLabel}</label>
+                  <input
+                    inputMode="numeric"
+                    value={thKeywordInterest}
+                    onChange={(e) => setThKeywordInterest(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-ink/55">{d.thresholdsHint}</p>
+              {thresholdsMsg ? (
+                <p
+                  className={`mt-2 rounded-lg border px-3 py-2 text-sm ${
+                    thresholdsMsg.ok
+                      ? "border-green-200 bg-green-50 text-green-800"
+                      : "border-red-200 bg-red-50 text-red-800"
+                  }`}
+                >
+                  {thresholdsMsg.text}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                onClick={onSaveThresholds}
+                disabled={savingThresholds}
+                className="mt-3 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper disabled:opacity-50"
+              >
+                {savingThresholds ? d.savingThresholds : d.saveThresholds}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {error ? (
@@ -202,6 +332,7 @@ export function AmazonDiscoveryClient({ dict }: { dict: AmazonDiscoveryDict }) {
               {importing ? d.importing : `${d.importSelected} (${selected.size})`}
             </button>
           </div>
+          <p className="mt-2 text-xs text-ink/50">{d.signalCaption}</p>
           <div className="mt-3 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {products.map((p) => (
               <div
@@ -230,9 +361,72 @@ export function AmazonDiscoveryClient({ dict }: { dict: AmazonDiscoveryDict }) {
                 <div className="mt-2 text-xs text-ink/60">
                   ⭐ {p.rating ?? "—"}（{p.reviewCount ?? 0}）{p.isPrime ? "· Prime" : ""}
                 </div>
+                {p.brand && (
+                  <div className="mt-1 text-xs text-ink/60">
+                    {d.brandLabel}：{p.brand}
+                  </div>
+                )}
                 {p.estimatedCommission !== null && (
                   <div className="mt-1 text-xs text-ink/60">
                     {d.commissionLabel}: ${p.estimatedCommission}
+                  </div>
+                )}
+                {p.trafficGate && (
+                  <div className="mt-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-ink">{d.trafficGateTitle}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          p.trafficGate.passed === true
+                            ? "bg-green-100 text-green-800"
+                            : p.trafficGate.passed === false
+                              ? "bg-red-100 text-red-800"
+                              : "bg-ink/10 text-ink/60"
+                        }`}
+                      >
+                        {p.trafficGate.passed === true
+                          ? d.gatePassed
+                          : p.trafficGate.passed === false
+                            ? d.gateFailed
+                            : d.gateNoData}
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      {p.trafficGate.officialSite?.found ? (
+                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                          {d.officialSiteFoundLabel}
+                          {p.trafficGate.officialSite.domain
+                            ? `：${p.trafficGate.officialSite.domain}`
+                            : ""}
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-ink/10 px-2 py-0.5 text-xs font-medium text-ink/60">
+                          {d.officialSiteNone}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-xs leading-relaxed text-ink/70">
+                      {p.trafficGate.reason}
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {p.trafficGate.signals.map((s, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs text-ink/70">
+                          <span
+                            className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                              s.passed === true
+                                ? "bg-green-500"
+                                : s.passed === false
+                                  ? "bg-red-500"
+                                  : "bg-ink/25"
+                            }`}
+                          />
+                          <span className="flex-1">
+                            {s.label}：{s.value === null ? d.gateNoData : s.value} /{" "}
+                            {d.thresholdLabel} {s.threshold ?? "—"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 <div className="mt-2 flex flex-wrap gap-1">

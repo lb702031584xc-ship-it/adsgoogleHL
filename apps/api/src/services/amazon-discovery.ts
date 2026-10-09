@@ -19,6 +19,12 @@ import {
   scoreAmazonProduct,
   type AmazonProduct,
 } from "../networks/amazon-adapter.js";
+import { evaluateTrafficGate } from "../traffic/gate.js";
+import { getTrafficThresholds } from "../traffic/thresholds.js";
+import type {
+  TrafficGateResult,
+  TrafficThresholds,
+} from "../traffic/types.js";
 
 export interface DiscoveryCriteria {
   keywords: string[];
@@ -28,6 +34,8 @@ export interface DiscoveryCriteria {
   minReviews?: number | null;
   region?: string;
   maxResults?: number;
+  /** 本次发现使用的流量门阈值（历史追溯用，runDiscovery 开头从 AiSetting 取出） */
+  trafficThresholds?: TrafficThresholds;
 }
 
 export interface ScoredProduct extends AmazonProduct {
@@ -35,6 +43,8 @@ export interface ScoredProduct extends AmazonProduct {
   /** 预估佣金（按 4% 中位数估算） */
   estimatedCommission: number | null;
   reasons: string[];
+  /** 流量需求门评估结果（仅 top N 产品有值，历史记录反序列化时为 undefined） */
+  trafficGate?: TrafficGateResult | null;
 }
 
 export interface DiscoveryResult {
@@ -141,6 +151,58 @@ export function filterProducts(
   });
 }
 
+/** 流量门评估只跑打分最高的 N 个产品，避免一次 discovery 打几十个外部请求 */
+export const TRAFFIC_GATE_TOP_N = 10;
+/** 流量门评估并发上限（手写 semaphore，不引新依赖） */
+const TRAFFIC_GATE_CONCURRENCY = 3;
+
+/**
+ * 对 top N 产品并行跑流量需求门评估（并发上限 3）。
+ * 单个产品评估异常只污染该产品自身（passed=null），绝不让整个 discovery 失败。
+ * evaluateTrafficGate 按契约内部永不抛错，这里的 try/catch 是双保险。
+ */
+async function attachTrafficGates(
+  scored: ScoredProduct[],
+  criteria: DiscoveryCriteria,
+  thresholds: TrafficThresholds,
+  prisma: PrismaClient
+): Promise<void> {
+  const top = scored.slice(0, TRAFFIC_GATE_TOP_N);
+  if (top.length === 0) return;
+  const keywords = criteria.keywords.slice(0, 2);
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < top.length) {
+      const i = cursor++;
+      const p = top[i];
+      const brand = p.brand ?? null;
+      try {
+        p.trafficGate = await evaluateTrafficGate({
+          brand,
+          title: p.title,
+          keywords,
+          thresholds,
+          prisma,
+        });
+      } catch (e) {
+        p.trafficGate = {
+          passed: null,
+          reason:
+            "流量门评估异常：" + (e instanceof Error ? e.message : String(e)),
+          officialSite: null,
+          signals: [],
+        };
+      }
+    }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(TRAFFIC_GATE_CONCURRENCY, top.length) },
+      () => worker()
+    )
+  );
+}
+
 /**
  * 执行一次选品发现。
  * apiKey: "AccessKey|SecretKey|PartnerTag|Region" 格式的解密后凭证。
@@ -156,6 +218,10 @@ export async function runDiscovery(
   const criteria = validateCriteria(criteriaInput);
   const creds = parseAmazonCredentials(apiKey);
   if (criteria.region) creds.region = criteria.region;
+
+  // 流量门阈值：一次取出，存入 criteria 便于历史追溯，同时传给 gate
+  const trafficThresholds = await getTrafficThresholds(prisma);
+  criteria.trafficThresholds = trafficThresholds;
 
   const runId = randomUUID();
   const allProducts: AmazonProduct[] = [];
@@ -196,6 +262,9 @@ export async function runDiscovery(
     .map(scoreAndExplain)
     .sort((a, b) => b.score - a.score)
     .slice(0, criteria.maxResults ?? 30);
+
+  // 流量需求门：只评估 top N，并发上限 3，异常不影响主流程
+  await attachTrafficGates(scored, criteria, trafficThresholds, prisma);
 
   // 持久化（用 raw SQL 存 JSON，避免大 schema 变更）
   await prisma.$executeRawUnsafe(

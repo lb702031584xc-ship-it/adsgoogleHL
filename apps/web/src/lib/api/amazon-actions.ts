@@ -7,7 +7,10 @@
 import {
   runAmazonDiscovery,
   importAmazonProducts,
+  getTrafficThresholds,
+  updateTrafficThresholds,
   type AmazonDiscoveryCriteria,
+  type TrafficThresholds,
 } from "./ai";
 import type { AmazonScoredProduct } from "./amazon-types";
 
@@ -52,5 +55,27 @@ export async function importAmazonProductsAction(
     return { ok: true, data };
   } catch (e) {
     return mapError(e, "导入失败，请稍后重试。");
+  }
+}
+
+export async function getTrafficThresholdsAction(): Promise<
+  AmazonActionResult<TrafficThresholds>
+> {
+  try {
+    const data = await getTrafficThresholds();
+    return { ok: true, data };
+  } catch (e) {
+    return mapError(e, "加载流量门阈值失败。");
+  }
+}
+
+export async function saveTrafficThresholdsAction(
+  input: Partial<TrafficThresholds>
+): Promise<AmazonActionResult<TrafficThresholds>> {
+  try {
+    const data = await updateTrafficThresholds(input);
+    return { ok: true, data };
+  } catch (e) {
+    return mapError(e, "保存阈值失败，请稍后重试。");
   }
 }

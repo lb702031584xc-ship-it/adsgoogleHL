@@ -552,7 +552,12 @@ describe("ai routes", () => {
       },
     });
     expect(put.statusCode).toBe(200);
-    expect(put.json()).toEqual({ ok: true, configured: true });
+    expect(put.json()).toEqual({
+        ok: true,
+        configured: true,
+        hasTrafficSimilarweb: false,
+        hasTrafficDataforseo: false,
+      });
 
     const get = await app.inject({
       method: "GET",
@@ -614,7 +619,12 @@ describe("ai routes", () => {
       headers: cookie(adminToken),
       payload: { model: "deepseek-reasoner" },
     });
-    expect(put.json()).toEqual({ ok: true, configured: true });
+    expect(put.json()).toEqual({
+        ok: true,
+        configured: true,
+        hasTrafficSimilarweb: false,
+        hasTrafficDataforseo: false,
+      });
     const get = await app.inject({
       method: "GET",
       url: "/api/v1/ai/settings",

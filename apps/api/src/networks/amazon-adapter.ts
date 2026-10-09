@@ -164,6 +164,8 @@ export interface AmazonProduct {
   imageUrl: string | null;
   isPrime: boolean;
   availability: string | null;
+  /** 品牌（ItemInfo.ByLineInfo.Brand.DisplayValue），无则 null */
+  brand: string | null;
 }
 
 /** 从 PA-API 响应提取产品列表 */
@@ -183,6 +185,12 @@ export function parseSearchItemsResponse(data: unknown): AmazonProduct[] {
     const images = o.Images as
       | { Primary?: { Large?: { URL?: string } } }
       | undefined;
+    const byLineInfo = (
+      o.ItemInfo as
+        | { ByLineInfo?: { Brand?: { DisplayValue?: unknown } } }
+        | undefined
+    )?.ByLineInfo;
+    const brandRaw = byLineInfo?.Brand?.DisplayValue;
     return {
       asin: String(o.ASIN ?? ""),
       title: String((o.ItemInfo as { Title?: { DisplayValue?: string } })?.Title?.DisplayValue ?? ""),
@@ -194,6 +202,10 @@ export function parseSearchItemsResponse(data: unknown): AmazonProduct[] {
       imageUrl: images?.Primary?.Large?.URL ?? null,
       isPrime: listing?.DeliveryInfo?.IsPrimeEligible ?? false,
       availability: listing?.Availability?.Message ?? null,
+      brand:
+        typeof brandRaw === "string" && brandRaw.trim()
+          ? brandRaw.trim()
+          : null,
     };
   });
 }

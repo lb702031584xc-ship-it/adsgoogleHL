@@ -50,6 +50,20 @@ export const zh = {
       paused: "暂停",
     },
     loading: "加载中…",
+    trafficGate: {
+      check: "检测流量门",
+      checking: "检测中…",
+      close: "收起结果",
+      passed: "通过",
+      failed: "未通过",
+      unknown: "暂无数据",
+      officialSite: "官网",
+      officialSiteSkipped: "已跳过官网检测（直接使用商家域名）",
+      officialSiteNotFound: "未找到官网",
+      confidence: "可信度",
+      signals: "流量信号",
+      notSet: "—",
+    },
   },
 };
 
@@ -98,6 +112,20 @@ export const en = {
       paused: "Paused",
     },
     loading: "Loading…",
+    trafficGate: {
+      check: "Check traffic gate",
+      checking: "Checking…",
+      close: "Hide result",
+      passed: "Passed",
+      failed: "Blocked",
+      unknown: "No data",
+      officialSite: "Official site",
+      officialSiteSkipped: "Official-site detection skipped (merchant domain provided)",
+      officialSiteNotFound: "Official site not found",
+      confidence: "confidence",
+      signals: "Traffic signals",
+      notSet: "—",
+    },
   },
 };
 

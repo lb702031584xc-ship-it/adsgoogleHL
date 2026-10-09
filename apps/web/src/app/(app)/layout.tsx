@@ -35,6 +35,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   interface NavSection {
     title: string;
     items: { href: string; label: string }[];
+    /** 常驻展开 + 标题高亮的一级菜单组。 */
+    pinned?: boolean;
   }
 
   const s = t.common.nav.sections;
@@ -44,6 +46,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     : [
         {
           title: s.start,
+          pinned: true,
           items: [
             { href: "/launch", label: `① ${t.launch.title}` },
             { href: "/dashboard", label: t.common.nav.dashboard },
@@ -51,6 +54,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         },
         {
           title: s.affiliate,
+          pinned: true,
           items: [
             { href: "/networks", label: ni.connectNetworks },
             { href: "/offers", label: ni.offerList },

@@ -1,10 +1,57 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   validateCriteria,
   filterProducts,
   scoreAndExplain,
+  runDiscovery,
+  TRAFFIC_GATE_TOP_N,
   type AmazonProduct,
 } from "./amazon-discovery.js";
+import { evaluateTrafficGate } from "../traffic/gate.js";
+import { getTrafficThresholds } from "../traffic/thresholds.js";
+import { searchAmazonProducts } from "../networks/amazon-adapter.js";
+import type { PrismaClient } from "@adlinklab/database";
+import type {
+  TrafficGateResult,
+  TrafficThresholds,
+} from "../traffic/types.js";
+
+vi.mock("../traffic/gate.js", () => ({
+  evaluateTrafficGate: vi.fn(),
+}));
+
+vi.mock("../traffic/thresholds.js", () => ({
+  getTrafficThresholds: vi.fn(),
+}));
+
+vi.mock("../networks/amazon-adapter.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../networks/amazon-adapter.js")>();
+  return { ...actual, searchAmazonProducts: vi.fn() };
+});
+
+const mockEvaluateGate = vi.mocked(evaluateTrafficGate);
+const mockGetThresholds = vi.mocked(getTrafficThresholds);
+const mockSearch = vi.mocked(searchAmazonProducts);
+
+const MOCK_THRESHOLDS: TrafficThresholds = {
+  officialSiteMonthlyVisits: 50000,
+  brandInterest: 30,
+  keywordInterest: 30,
+};
+
+const okGate = (asin: string): TrafficGateResult => ({
+  passed: true,
+  reason: `gate ok for ${asin}`,
+  officialSite: null,
+  signals: [],
+});
+
+function makeFakePrisma() {
+  return {
+    $executeRawUnsafe: vi.fn().mockResolvedValue(1),
+  } as unknown as PrismaClient;
+}
 
 const mockProduct = (overrides: Partial<AmazonProduct> = {}): AmazonProduct => ({
   asin: "B08N5WRWNW",
@@ -17,6 +64,7 @@ const mockProduct = (overrides: Partial<AmazonProduct> = {}): AmazonProduct => (
   imageUrl: null,
   isPrime: true,
   availability: "In Stock",
+  brand: null,
   ...overrides,
 });
 
@@ -67,5 +115,125 @@ describe("amazon-discovery", () => {
     expect(scored.score).toBeGreaterThan(0);
     expect(scored.estimatedCommission).toBeCloseTo(4.0, 1); // 99.99 * 4%
     expect(scored.reasons.length).toBeGreaterThan(0);
+  });
+});
+
+describe("runDiscovery traffic gate", () => {
+  const products12 = () =>
+    Array.from({ length: 12 }, (_, i) =>
+      mockProduct({ asin: `B000000${i.toString().padStart(2, "0")}` })
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetThresholds.mockResolvedValue({ ...MOCK_THRESHOLDS });
+    mockEvaluateGate.mockImplementation(async (input) =>
+      okGate(input.title.slice(0, 8))
+    );
+    mockSearch.mockResolvedValue(products12());
+  });
+
+  it("attaches trafficGate to top N products only", async () => {
+    const prisma = makeFakePrisma();
+    const result = await runDiscovery(
+      prisma,
+      "tenant-1",
+      "user-1",
+      "AK|SK|tag|US",
+      { keywords: ["earbuds"], maxResults: 20 }
+    );
+
+    expect(result.products).toHaveLength(12);
+    expect(mockEvaluateGate).toHaveBeenCalledTimes(TRAFFIC_GATE_TOP_N);
+    for (let i = 0; i < TRAFFIC_GATE_TOP_N; i++) {
+      expect(result.products[i].trafficGate).toBeDefined();
+      expect(result.products[i].trafficGate?.passed).toBe(true);
+    }
+    for (let i = TRAFFIC_GATE_TOP_N; i < result.products.length; i++) {
+      expect(result.products[i].trafficGate).toBeUndefined();
+    }
+  });
+
+  it("passes brand/title/keywords/thresholds to the gate", async () => {
+    const prisma = makeFakePrisma();
+    mockSearch.mockResolvedValue([
+      { ...mockProduct({ asin: "B1" }), brand: "Sony" } as AmazonProduct,
+    ]);
+    await runDiscovery(prisma, "tenant-1", "user-1", "AK|SK|tag|US", {
+      keywords: ["headphones", "earbuds", "speaker"],
+    });
+
+    expect(mockEvaluateGate).toHaveBeenCalledTimes(1);
+    const input = mockEvaluateGate.mock.calls[0][0];
+    expect(input.brand).toBe("Sony");
+    expect(input.title).toBe("Test Product");
+    expect(input.keywords).toEqual(["headphones", "earbuds"]); // 只取前 2 个
+    expect(input.thresholds).toEqual(MOCK_THRESHOLDS);
+    expect(input.prisma).toBe(prisma);
+  });
+
+  it("stores thresholds in criteria for history traceability", async () => {
+    const prisma = makeFakePrisma();
+    const result = await runDiscovery(
+      prisma,
+      "tenant-1",
+      "user-1",
+      "AK|SK|tag|US",
+      { keywords: ["earbuds"] }
+    );
+
+    expect(result.criteria.trafficThresholds).toEqual(MOCK_THRESHOLDS);
+    // 持久化的 criteria JSON 里也带阈值
+    const insertArgs = (prisma.$executeRawUnsafe as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    const persistedCriteria = JSON.parse(insertArgs[5] as string);
+    expect(persistedCriteria.trafficThresholds).toEqual(MOCK_THRESHOLDS);
+    // 持久化的 products JSON 里 top 产品带 trafficGate
+    const persistedProducts = JSON.parse(insertArgs[6] as string) as Array<{
+      trafficGate?: TrafficGateResult | null;
+    }>;
+    expect(persistedProducts[0].trafficGate?.passed).toBe(true);
+  });
+
+  it("a failing gate does not fail the discovery run", async () => {
+    const prisma = makeFakePrisma();
+    mockEvaluateGate.mockRejectedValueOnce(new Error("boom"));
+    const result = await runDiscovery(
+      prisma,
+      "tenant-1",
+      "user-1",
+      "AK|SK|tag|US",
+      { keywords: ["earbuds"] }
+    );
+
+    expect(result.products).toHaveLength(12);
+    const failed = result.products.find(
+      (p) => p.trafficGate?.reason.startsWith("流量门评估异常")
+    );
+    expect(failed).toBeDefined();
+    expect(failed?.trafficGate?.passed).toBeNull();
+    expect(failed?.trafficGate?.reason).toContain("boom");
+    // 其余产品正常
+    expect(
+      result.products.filter((p) => p.trafficGate?.passed === true)
+    ).toHaveLength(TRAFFIC_GATE_TOP_N - 1);
+  });
+
+  it("limits gate concurrency to 3", async () => {
+    const prisma = makeFakePrisma();
+    let active = 0;
+    let maxActive = 0;
+    mockEvaluateGate.mockImplementation(async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((r) => setTimeout(r, 20));
+      active--;
+      return okGate("x");
+    });
+    await runDiscovery(prisma, "tenant-1", "user-1", "AK|SK|tag|US", {
+      keywords: ["earbuds"],
+    });
+    expect(maxActive).toBeLessThanOrEqual(3);
+    expect(maxActive).toBe(3);
   });
 });

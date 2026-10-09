@@ -18,6 +18,8 @@ import {
   deleteCashbackOfferAction,
   listCashbackOffersAction,
 } from "@/lib/api/cashback-actions";
+import { checkTrafficGateAction } from "@/lib/api/traffic-actions";
+import type { TrafficGate } from "@/lib/api/amazon-types";
 import type { CashbackOffer } from "@/lib/api/cashback";
 import type { CashbackMonitorDict } from "@/i18n/dict/cashback-monitor";
 
@@ -50,6 +52,21 @@ function asHttpUrl(v: string): string | null {
   return parsed.toString();
 }
 
+/**
+ * 取 registrable domain（近似：去掉 www 前缀后取最后两段）。
+ * 用于流量门检测：商家官网通常就是该域名，可跳过官网检测。
+ */
+function registrableDomain(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, "");
+    const parts = host.split(".").filter(Boolean);
+    if (parts.length < 2) return null;
+    return parts.slice(-2).join(".");
+  } catch {
+    return null;
+  }
+}
+
 export function MonitorOffersTab({
   dict,
   initialOffers,
@@ -65,6 +82,10 @@ export function MonitorOffersTab({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // 流量门检测（行内展开，仅展示不落库）。
+  const [checking, setChecking] = useState(false);
+  const [gateResult, setGateResult] = useState<TrafficGate | null>(null);
+  const [gateOpen, setGateOpen] = useState(false);
 
   /** datalist 建议：已有 offer 的网络名（去重）+ 常用常量。 */
   const suggestions = useMemo(() => {
@@ -114,6 +135,35 @@ export function MonitorOffersTab({
       }
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function onCheckGate() {
+    setError(null);
+    setNotice(null);
+    const url = asHttpUrl(originalUrl);
+    if (!url) {
+      setError(dict.urlRequired);
+      return;
+    }
+    const domain = registrableDomain(url);
+    if (!domain) {
+      setError(dict.urlRequired);
+      return;
+    }
+    setChecking(true);
+    setGateOpen(false);
+    try {
+      // 返利 offer 的官网就是商家域名：直接传 domain 跳过官网检测。
+      const res = await checkTrafficGateAction({ domain });
+      if (res.ok) {
+        setGateResult(res.data);
+        setGateOpen(true);
+      } else {
+        setError(res.error);
+      }
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -180,12 +230,29 @@ export function MonitorOffersTab({
               inputMode="url"
             />
           </label>
-          <div className="flex items-end md:col-span-3">
+          <div className="flex items-end gap-2 md:col-span-3">
             <button type="submit" className={btnPrimary} disabled={creating}>
               {creating ? dict.adding : dict.submit}
             </button>
+            <button
+              type="button"
+              className={btnGhost}
+              disabled={checking}
+              onClick={onCheckGate}
+            >
+              {checking ? dict.trafficGate.checking : dict.trafficGate.check}
+            </button>
           </div>
         </form>
+
+        {/* 流量门检测结果：行内展开，仅展示不落库 */}
+        {gateOpen && gateResult ? (
+          <TrafficGatePanel
+            dict={dict.trafficGate}
+            gate={gateResult}
+            onClose={() => setGateOpen(false)}
+          />
+        ) : null}
       </section>
 
       {/* Offer list */}
@@ -247,6 +314,79 @@ export function MonitorOffersTab({
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * 流量门检测结果的紧凑展示（行内面板，仅展示不落库）。
+ * 三态：通过 / 未通过 / 暂无数据 + reason + 官网信息 + 信号明细。
+ */
+function TrafficGatePanel({
+  dict,
+  gate,
+  onClose,
+}: {
+  dict: CashbackMonitorDict["offers"]["trafficGate"];
+  gate: TrafficGate;
+  onClose: () => void;
+}) {
+  const pill =
+    gate.passed === true
+      ? { text: dict.passed, cls: "bg-emerald-100 text-emerald-800" }
+      : gate.passed === false
+        ? { text: dict.failed, cls: "bg-red-100 text-red-800" }
+        : { text: dict.unknown, cls: "bg-ink/10 text-ink/60" };
+  return (
+    <div className="mt-4 rounded-lg border border-ink/10 bg-ink/[0.02] p-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${pill.cls}`}>
+          {pill.text}
+        </span>
+        <button type="button" className={btnGhost} onClick={onClose}>
+          {dict.close}
+        </button>
+      </div>
+      <p className="mt-2 text-sm text-ink/80">{gate.reason}</p>
+      <p className="mt-1 text-sm text-ink/60">
+        {dict.officialSite}：{" "}
+        {gate.officialSite
+          ? gate.officialSite.found
+            ? `${gate.officialSite.domain ?? dict.notSet}（${dict.confidence}: ${gate.officialSite.confidence}）`
+            : dict.officialSiteNotFound
+          : dict.officialSiteSkipped}
+      </p>
+      {gate.signals.length > 0 ? (
+        <div className="mt-3">
+          <p className="text-xs font-medium text-ink/60">{dict.signals}</p>
+          <ul className="mt-1 space-y-1">
+            {gate.signals.map((s, i) => (
+              <li key={i} className="flex items-center gap-2 text-sm text-ink/80">
+                <span
+                  className={`inline-block w-4 text-center font-medium ${
+                    s.passed === true
+                      ? "text-emerald-700"
+                      : s.passed === false
+                        ? "text-red-700"
+                        : "text-ink/40"
+                  }`}
+                  aria-hidden="true"
+                >
+                  {s.passed === true ? "✓" : s.passed === false ? "✗" : "—"}
+                </span>
+                <span className="text-ink">{s.label}</span>
+                <span className={monoClass}>
+                  {s.value ?? dict.notSet}
+                  {s.threshold != null ? ` / ≥${s.threshold}` : ""}
+                </span>
+                {s.note ? (
+                  <span className="text-xs text-ink/50">{s.note}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }

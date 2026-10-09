@@ -5,11 +5,13 @@
  * 所有服务端调用都走 @/lib/api/launch-actions.ts（"use server"），
  * 本文件绝不 import @/lib/api/entities 等 server-only 模块（仅 import type）。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { EntityPageHeader } from "@/components/entities/ui";
 import type { LaunchDict } from "@/i18n/dict/launch";
 import type { Offer } from "@/lib/api/entities";
 import type { AiAnalysis } from "@/lib/api/ai";
+import type { TrafficGate } from "@/lib/api/amazon-types";
+import { TrafficGateCard } from "@/components/traffic/traffic-gate-card";
 import type { LanderTemplate } from "@/lib/api/lander";
 import type { AdPlan } from "@/lib/api/ads-auto";
 import type {
@@ -28,6 +30,7 @@ import {
   listTemplatesAction,
   useTemplateAction,
 } from "@/lib/api/launch-actions";
+import { checkTrafficGateAction } from "@/lib/api/traffic-actions";
 
 const inputClass =
   "w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm text-ink";
@@ -64,8 +67,34 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
   const [activateResult, setActivateResult] = useState<LaunchActivateResult | null>(null);
   const [businessNameChecked, setBusinessNameChecked] = useState(false);
 
+  // 流量需求门：step2 选中分析后自动跑一次，失败只显示"暂无数据"，不阻塞流程。
+  const [gate, setGate] = useState<TrafficGate | null>(null);
+  const [gateLoading, setGateLoading] = useState(false);
+
   const activeOffer = offers.find((o) => o.id === offerId) ?? detail?.offer ?? null;
   const activeAnalysis = analyses.find((a) => a.id === analysisId) ?? null;
+
+  useEffect(() => {
+    if (step !== 2) return;
+    const brand = activeAnalysis?.merchant ?? activeOffer?.name ?? undefined;
+    const keywords = (activeAnalysis?.analysis?.keywords ?? []).slice(0, 5);
+    if (!brand && keywords.length === 0) {
+      setGate(null);
+      setGateLoading(false);
+      return;
+    }
+    let alive = true;
+    setGate(null);
+    setGateLoading(true);
+    void checkTrafficGateAction({ brand, keywords }).then((g) => {
+      if (!alive) return;
+      setGateLoading(false);
+      if (g.ok) setGate(g.data);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [step, analysisId, analyses, activeAnalysis?.merchant, activeOffer?.name]);
 
   async function refreshDetail(id: string) {
     const res = await getLaunchDetailAction(id);
@@ -391,6 +420,15 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+          {analyses.length > 0 && (
+            <div className="mt-4">
+              <TrafficGateCard
+                gate={gate}
+                loading={gateLoading}
+                dict={d.trafficGate}
+              />
             </div>
           )}
           {activeAnalysis?.analysis && (

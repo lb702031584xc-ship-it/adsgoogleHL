@@ -230,6 +230,9 @@ export async function registerRoutes(
       "./amazon-discovery.js"
     );
     registerAmazonDiscoveryRoutes(app, { prisma: services.prisma });
+    // 流量需求门阈值管理 (2026-10-09)
+    const { registerTrafficRoutes } = await import("./traffic.js");
+    registerTrafficRoutes(app, { prisma: services.prisma });
   }
 
   app.get<{

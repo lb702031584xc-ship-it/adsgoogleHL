@@ -61,6 +61,28 @@ describe("amazon-adapter", () => {
     expect(products[0].isPrime).toBe(true);
   });
 
+  it("parses brand from ByLineInfo", () => {
+    const withBrand = parseSearchItemsResponse({
+      SearchResult: {
+        Items: [
+          {
+            ASIN: "B08N5WRWNW",
+            ItemInfo: {
+              Title: { DisplayValue: "Anker 737 Power Bank" },
+              ByLineInfo: { Brand: { DisplayValue: "Anker" } },
+            },
+          },
+        ],
+      },
+    });
+    expect(withBrand[0]?.brand).toBe("Anker");
+
+    const withoutBrand = parseSearchItemsResponse({
+      SearchResult: { Items: [{ ASIN: "B08N5WRWNW", ItemInfo: {} }] },
+    });
+    expect(withoutBrand[0]?.brand).toBe(null);
+  });
+
   it("returns empty for missing items", () => {
     expect(parseSearchItemsResponse({})).toEqual([]);
     expect(parseSearchItemsResponse({ SearchResult: {} })).toEqual([]);
@@ -78,6 +100,7 @@ describe("amazon-adapter", () => {
       imageUrl: null,
       isPrime: true,
       availability: "In Stock",
+      brand: "Anker",
     });
     const bad = scoreAmazonProduct({
       asin: "B",
@@ -90,6 +113,7 @@ describe("amazon-adapter", () => {
       imageUrl: null,
       isPrime: false,
       availability: "Out of Stock",
+      brand: null,
     });
     expect(good).toBeGreaterThan(bad);
     expect(good).toBeGreaterThan(70);

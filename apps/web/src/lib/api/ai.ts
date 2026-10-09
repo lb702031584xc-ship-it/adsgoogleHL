@@ -75,6 +75,9 @@ export interface AiSettings {
   hasKey: boolean;
   ownedDomains: string[];
   hasAmazonPaapi: boolean;
+  /** 后端返回的流量信号 key 配置状态（后端未返回时为 undefined） */
+  hasTrafficSimilarweb?: boolean;
+  hasTrafficDataforseo?: boolean;
 }
 
 export interface AnalyzeInput {
@@ -98,6 +101,17 @@ export interface SaveSettingsInput {
     secretKey: string;
     partnerTag: string;
     region: string;
+  } | null;
+  /**
+   * 流量信号付费 key（加密存储由后端处理）：
+   * traffic.similarwebKey（SimilarWeb 月访问量），
+   * traffic.dataforseoLogin / traffic.dataforseoPassword（DataForSEO 月搜索量）。
+   * 未配置时对应流量信号显示"暂无数据"。
+   */
+  traffic?: {
+    similarwebKey?: string;
+    dataforseoLogin?: string;
+    dataforseoPassword?: string;
   } | null;
 }
 
@@ -352,4 +366,26 @@ export async function importAmazonProducts(
       body: JSON.stringify({ asins }),
     }
   );
+}
+
+/** 流量门阈值：官网月访问量 / 品牌热度（0-100 相对值）/ 关键词热度（0-100 相对值） */
+export interface TrafficThresholds {
+  officialSiteMonthlyVisits: number;
+  brandInterest: number;
+  keywordInterest: number;
+}
+
+/** 读取当前流量门阈值。 */
+export async function getTrafficThresholds(): Promise<TrafficThresholds> {
+  return aiFetch<TrafficThresholds>("/api/v1/traffic/thresholds");
+}
+
+/** 更新流量门阈值（body 可只带部分字段），返回更新后的阈值。 */
+export async function updateTrafficThresholds(
+  input: Partial<TrafficThresholds>
+): Promise<TrafficThresholds> {
+  return aiFetch<TrafficThresholds>("/api/v1/traffic/thresholds", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
 }

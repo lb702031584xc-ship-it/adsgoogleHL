@@ -88,6 +88,19 @@ export const zh = {
       medium: "中",
       low: "低",
     },
+    trafficGate: {
+      title: "流量需求门",
+      passed: "通过",
+      notPassed: "不通过",
+      noData: "暂无数据",
+      notChecked: "尚未检测",
+      loading: "检测中，请稍候…",
+      officialSiteFound: "有官网",
+      officialSiteNotFound: "无官网",
+      signals: "数据源",
+      reason: "判定说明",
+      thresholdLabel: "阈值",
+    },
   },
   terms: {
     title: "Offer 条款解析",
@@ -676,6 +689,18 @@ export const zh = {
         "API Key 只保存在服务器端，切勿发给任何人，也不要提交到代码仓库。",
       guide:
         "获取 Key：DeepSeek → platform.deepseek.com；OpenAI → platform.openai.com。",
+      traffic: {
+        title: "流量信号凭证",
+        hint:
+          "用于 Amazon 选品流量门。免费信号（Google Trends 热度、官网检测）无需配置；付费 key（SimilarWeb 月访问量、DataForSEO 月搜索量）在此配置。",
+        similarwebKey: "SimilarWeb API Key",
+        similarwebHelp:
+          "付费 key，用于获取官网月访问量。未配置时，SimilarWeb 信号显示“暂无数据”。",
+        dataforseoLogin: "DataForSEO 登录名",
+        dataforseoPassword: "DataForSEO 密码",
+        dataforseoHelp:
+          "付费 key，用于获取关键词月搜索量。未配置时，DataForSEO 信号显示“暂无数据”。",
+      },
     },
   },
   lander: {
@@ -897,6 +922,19 @@ export const en: typeof zh = {
       high: "High",
       medium: "Medium",
       low: "Low",
+    },
+    trafficGate: {
+      title: "Traffic demand gate",
+      passed: "Passed",
+      notPassed: "Not passed",
+      noData: "No data",
+      notChecked: "Not checked yet",
+      loading: "Checking, please wait…",
+      officialSiteFound: "Official site found",
+      officialSiteNotFound: "No official site found",
+      signals: "Data sources",
+      reason: "Verdict",
+      thresholdLabel: "threshold",
     },
   },
   terms: {
@@ -1490,6 +1528,18 @@ export const en: typeof zh = {
         "The API key is stored server-side only. Never share it with anyone or commit it to a repository.",
       guide:
         "Get a key: DeepSeek → platform.deepseek.com; OpenAI → platform.openai.com.",
+      traffic: {
+        title: "Traffic signal credentials",
+        hint:
+          "Used by the Amazon discovery traffic gate. Free signals (Google Trends interest, official-site detection) need no configuration; paid keys (SimilarWeb monthly visits, DataForSEO monthly search volume) are configured here.",
+        similarwebKey: "SimilarWeb API key",
+        similarwebHelp:
+          'Paid key, used to fetch official-site monthly visits. When unset, the SimilarWeb signal shows "no data".',
+        dataforseoLogin: "DataForSEO login",
+        dataforseoPassword: "DataForSEO password",
+        dataforseoHelp:
+          'Paid key, used to fetch keyword monthly search volume. When unset, the DataForSEO signal shows "no data".',
+      },
     },
   },
   lander: {

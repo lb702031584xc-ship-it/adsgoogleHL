@@ -24,6 +24,26 @@ export interface AmazonDiscoveryDict {
   totalKept: string;
   paidTrafficWarningTitle: string;
   paidTrafficWarningBody: string;
+  brandLabel: string;
+  trafficGateTitle: string;
+  officialSiteFoundLabel: string;
+  officialSiteNone: string;
+  gatePassed: string;
+  gateFailed: string;
+  gateNoData: string;
+  thresholdLabel: string;
+  signalCaption: string;
+  thresholdsTitle: string;
+  thresholdsHint: string;
+  officialSiteVisitsLabel: string;
+  brandInterestLabel: string;
+  keywordInterestLabel: string;
+  saveThresholds: string;
+  savingThresholds: string;
+  thresholdsSaved: string;
+  thresholdsSaveFailed: string;
+  expand: string;
+  collapse: string;
 }
 
 export const zh: AmazonDiscoveryDict = {
@@ -55,6 +75,28 @@ export const zh: AmazonDiscoveryDict = {
   paidTrafficWarningTitle: "⚠️ 付费流量不计佣金",
   paidTrafficWarningBody:
     "Amazon Associates 协议（2026 年 4 月更新）：来自付费广告（包括 Google Ads）的流量不计佣金。用 Google Ads 直链 Amazon 商品页 = 广告费白花、佣金为零。正确做法：先把流量引到自己的内容落地页（评测 / 对比文章），再从落地页链到 Amazon。",
+  brandLabel: "品牌",
+  trafficGateTitle: "流量门",
+  officialSiteFoundLabel: "有官网",
+  officialSiteNone: "无官网",
+  gatePassed: "通过",
+  gateFailed: "不通过",
+  gateNoData: "暂无数据",
+  thresholdLabel: "阈值",
+  signalCaption:
+    "数据口径：Google Trends = 热度（0-100 相对值，免费）· SimilarWeb = 月访问量（付费 key）· DataForSEO = 月搜索量（付费 key）",
+  thresholdsTitle: "流量门阈值",
+  thresholdsHint:
+    "免费自动：Google Trends 热度、官网检测；付费 key：SimilarWeb 月访问量、DataForSEO 月搜索量，在“系统设置 → AI 设置”中配置。",
+  officialSiteVisitsLabel: "官网月访问量阈值",
+  brandInterestLabel: "品牌热度阈值（0-100 相对值）",
+  keywordInterestLabel: "关键词热度阈值（0-100 相对值）",
+  saveThresholds: "保存阈值",
+  savingThresholds: "保存中…",
+  thresholdsSaved: "阈值已保存。",
+  thresholdsSaveFailed: "保存失败，请检查输入后重试。",
+  expand: "展开",
+  collapse: "收起",
 };
 
 export const en: AmazonDiscoveryDict = {
@@ -86,4 +128,26 @@ export const en: AmazonDiscoveryDict = {
   paidTrafficWarningTitle: "⚠️ Paid traffic earns no commission",
   paidTrafficWarningBody:
     "Per the Amazon Associates agreement (April 2026 update), traffic from paid ads (including Google Ads) is disqualified from commissions. Direct-linking Google Ads to Amazon product pages means paying for clicks and earning zero. The compliant path: send traffic to your own content landing page (review / comparison article) first, then link out to Amazon.",
+  brandLabel: "Brand",
+  trafficGateTitle: "Traffic gate",
+  officialSiteFoundLabel: "Official site",
+  officialSiteNone: "No official site",
+  gatePassed: "Passed",
+  gateFailed: "Failed",
+  gateNoData: "No data",
+  thresholdLabel: "Threshold",
+  signalCaption:
+    "Data sources: Google Trends = interest (0–100 relative, free) · SimilarWeb = monthly visits (paid key) · DataForSEO = monthly search volume (paid key)",
+  thresholdsTitle: "Traffic gate thresholds",
+  thresholdsHint:
+    "Free & automatic: Google Trends interest, official-site detection; paid keys: SimilarWeb monthly visits, DataForSEO monthly search volume — configure under Settings → AI settings.",
+  officialSiteVisitsLabel: "Official-site monthly visits threshold",
+  brandInterestLabel: "Brand interest threshold (0–100 relative)",
+  keywordInterestLabel: "Keyword interest threshold (0–100 relative)",
+  saveThresholds: "Save thresholds",
+  savingThresholds: "Saving…",
+  thresholdsSaved: "Thresholds saved.",
+  thresholdsSaveFailed: "Save failed, please check your input and retry.",
+  expand: "Expand",
+  collapse: "Collapse",
 };

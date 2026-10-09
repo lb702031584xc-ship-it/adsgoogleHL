@@ -58,6 +58,10 @@ const SETTING_MODEL = "llm.model";
 const SETTING_API_KEY_ENC = "llm.apiKeyEnc";
 const SETTING_OWNED_DOMAINS = "compliance.ownedDomains";
 const SETTING_AMAZON_PAAPI_ENC = "amazon.paapiEnc";
+/** 流量需求门数据源凭证（加密存储）：SimilarWeb / DataForSEO。 */
+const SETTING_TRAFFIC_SIMILARWEB = "traffic.similarwebKey";
+const SETTING_TRAFFIC_DATAFORSEO_LOGIN = "traffic.dataforseoLogin";
+const SETTING_TRAFFIC_DATAFORSEO_PASSWORD = "traffic.dataforseoPassword";
 
 async function requireSession(
   deps: AiRouteDeps,
@@ -91,6 +95,12 @@ interface LlmSettings {
   ownedDomains?: string[];
   /** Encrypted Amazon PA-API credentials (AccessKey|SecretKey|PartnerTag|Region). */
   amazonPaapiEnc?: string;
+  /** Encrypted SimilarWeb API key (traffic gate, paid). */
+  trafficSimilarwebEnc?: string;
+  /** Encrypted DataForSEO login (traffic gate, paid). */
+  trafficDataforseoLoginEnc?: string;
+  /** Encrypted DataForSEO password (traffic gate, paid). */
+  trafficDataforseoPasswordEnc?: string;
 }
 
 async function readSettings(prisma: PrismaClient): Promise<LlmSettings> {
@@ -101,6 +111,12 @@ async function readSettings(prisma: PrismaClient): Promise<LlmSettings> {
     else if (r.key === SETTING_MODEL) out.model = r.value;
     else if (r.key === SETTING_API_KEY_ENC) out.apiKeyEnc = r.value;
     else if (r.key === SETTING_AMAZON_PAAPI_ENC) out.amazonPaapiEnc = r.value;
+    else if (r.key === SETTING_TRAFFIC_SIMILARWEB)
+      out.trafficSimilarwebEnc = r.value;
+    else if (r.key === SETTING_TRAFFIC_DATAFORSEO_LOGIN)
+      out.trafficDataforseoLoginEnc = r.value;
+    else if (r.key === SETTING_TRAFFIC_DATAFORSEO_PASSWORD)
+      out.trafficDataforseoPasswordEnc = r.value;
     else if (r.key === SETTING_OWNED_DOMAINS) {
       out.ownedDomains = r.value
         .split(",")
@@ -150,6 +166,11 @@ export async function registerAiRoutes(
       hasKey: !!s.apiKeyEnc,
       ownedDomains: s.ownedDomains ?? [],
       hasAmazonPaapi: !!s.amazonPaapiEnc,
+      /** 流量数据源凭证是否已配置（只返回布尔值，永不返回明文）。 */
+      hasTrafficSimilarweb: !!s.trafficSimilarwebEnc,
+      hasTrafficDataforseo: !!(
+        s.trafficDataforseoLoginEnc && s.trafficDataforseoPasswordEnc
+      ),
     };
   });
 
@@ -162,6 +183,8 @@ export async function registerAiRoutes(
       apiKey?: unknown;
       ownedDomains?: unknown;
       amazonPaapi?: unknown;
+      /** 流量数据源凭证：{ similarwebKey?, dataforseoLogin?, dataforseoPassword? } */
+      traffic?: unknown;
     };
 
     const updates: Record<string, string> = {};
@@ -224,7 +247,49 @@ export async function registerAiRoutes(
         throw new ValidationError("amazonPaapi must be an object");
       }
     }
-    if (Object.keys(updates).length === 0) {
+    let trafficSectionProvided = false;
+    if (body.traffic !== undefined) {
+      // 流量数据源凭证（SimilarWeb / DataForSEO，付费 key）。
+      // 规则：只有非空字符串才加密写入；空字符串/null/缺失表示不修改已有值。
+      if (
+        body.traffic === null ||
+        typeof body.traffic !== "object" ||
+        Array.isArray(body.traffic)
+      ) {
+        throw new ValidationError("traffic must be an object");
+      }
+      trafficSectionProvided = true;
+      const t = body.traffic as Record<string, unknown>;
+      const saveTrafficSecret = (
+        field: unknown,
+        settingKey: string,
+        label: string
+      ) => {
+        if (field === undefined || field === null) return;
+        if (typeof field !== "string") {
+          throw new ValidationError(`${label} must be a string`);
+        }
+        if (field.trim().length === 0) return; // 空字符串 → 不覆盖已有值
+        const pepper = assertAiSettingsPepperConfigured();
+        updates[settingKey] = encryptSecret(field.trim(), pepper);
+      };
+      saveTrafficSecret(
+        t.similarwebKey,
+        SETTING_TRAFFIC_SIMILARWEB,
+        "traffic.similarwebKey"
+      );
+      saveTrafficSecret(
+        t.dataforseoLogin,
+        SETTING_TRAFFIC_DATAFORSEO_LOGIN,
+        "traffic.dataforseoLogin"
+      );
+      saveTrafficSecret(
+        t.dataforseoPassword,
+        SETTING_TRAFFIC_DATAFORSEO_PASSWORD,
+        "traffic.dataforseoPassword"
+      );
+    }
+    if (Object.keys(updates).length === 0 && !trafficSectionProvided) {
       throw new ValidationError("No settings provided");
     }
 
@@ -236,7 +301,14 @@ export async function registerAiRoutes(
       });
     }
     const s = await readSettings(prisma);
-    return { ok: true, configured: isConfigured(s) };
+    return {
+      ok: true,
+      configured: isConfigured(s),
+      hasTrafficSimilarweb: !!s.trafficSimilarwebEnc,
+      hasTrafficDataforseo: !!(
+        s.trafficDataforseoLoginEnc && s.trafficDataforseoPasswordEnc
+      ),
+    };
   });
 
   /** Analyze an offer (URL or pasted text) with the configured LLM. */

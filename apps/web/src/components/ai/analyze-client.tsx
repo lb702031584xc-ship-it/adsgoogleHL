@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useDict } from "@/i18n/use-dict";
 import { formatDateTime } from "@/lib/api/entities-config";
 import { EntityPageHeader } from "@/components/entities/ui";
 import { analyzeOfferAction } from "@/lib/api/ai-actions";
+import { checkTrafficGateAction } from "@/lib/api/traffic-actions";
+import type { TrafficGate } from "@/lib/api/amazon-types";
 import type { AiAnalysis, AiAnalysisSummary } from "@/lib/api/ai";
 import { AnalysisReport } from "./analysis-report";
+import { TrafficGateCard } from "@/components/traffic/traffic-gate-card";
 
 const CURRENCIES = ["USD", "EUR", "CNY", "GBP", "JPY"];
 
@@ -53,6 +56,10 @@ export function AnalyzeClient({
   const [notConfigured, setNotConfigured] = useState(false);
   const [report, setReport] = useState<AiAnalysis | null>(null);
   const [history, setHistory] = useState(initialHistory);
+  // 流量需求门：报告出来后自动跑一次，失败不阻塞主结果。
+  const [gate, setGate] = useState<TrafficGate | null>(null);
+  const [gateLoading, setGateLoading] = useState(false);
+  const gateSeq = useRef(0);
 
   const inputClass =
     "w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm text-ink placeholder:text-ink/35 focus:border-signal focus:outline-none";
@@ -91,6 +98,18 @@ export function AnalyzeClient({
           toSummary(res.data),
           ...h.filter((x) => x.id !== res.data.id),
         ]);
+        // 流量需求门自动检测：brand 取分析的 merchant 名（无则取用户输入的商家），
+        // keywords 取分析报告里的关键词；失败时只显示"暂无数据"，不阻塞主结果。
+        const seq = ++gateSeq.current;
+        const brand = res.data.merchant?.trim() || merchant.trim() || undefined;
+        const keywords = (res.data.analysis.keywords ?? []).slice(0, 5);
+        setGate(null);
+        setGateLoading(true);
+        void checkTrafficGateAction({ brand, keywords }).then((g) => {
+          if (seq !== gateSeq.current) return;
+          setGateLoading(false);
+          if (g.ok) setGate(g.data);
+        });
       } else if (res.code === "AI_NOT_CONFIGURED") {
         setNotConfigured(true);
       } else {
@@ -103,6 +122,9 @@ export function AnalyzeClient({
 
   function reset() {
     setReport(null);
+    setGate(null);
+    setGateLoading(false);
+    gateSeq.current++;
     setError(null);
     setNotConfigured(false);
   }
@@ -160,6 +182,13 @@ export function AnalyzeClient({
             {t.ai.analyze.report.reanalyze}
           </button>
           <AnalysisReport analysis={report} />
+          <div className="mt-4">
+            <TrafficGateCard
+              gate={gate}
+              loading={gateLoading}
+              dict={t.ai.analyze.trafficGate}
+            />
+          </div>
         </div>
       ) : (
         <form
