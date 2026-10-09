@@ -9,6 +9,7 @@ import { getDictionary } from "@/i18n/dictionaries";
 import {
   AiApiError,
   analyzeOffer,
+  analyzeProfit,
   analyzeTerms,
   checkUrls,
   getAiSettings,
@@ -26,6 +27,10 @@ import {
   type AnalyzeInput,
   type SaveSettingsInput,
 } from "./ai";
+import type {
+  ProfitAnalysisInput,
+  ProfitAnalysisResult,
+} from "./profit-types";
 
 export type AiActionResult<T> =
   | { ok: true; data: T }
@@ -179,5 +184,18 @@ export async function checkUrlsAction(
     return { ok: true, data };
   } catch (e) {
     return mapAiActionError(e, t, t.ai.compliance.failed);
+  }
+}
+
+export async function analyzeProfitAction(
+  input: ProfitAnalysisInput
+): Promise<AiActionResult<{ analysis: ProfitAnalysisResult }>> {
+  const lang = await getLang();
+  const t = getDictionary(lang);
+  try {
+    const data = await analyzeProfit(input);
+    return { ok: true, data };
+  } catch (e) {
+    return mapAiActionError(e, t, lang === "zh" ? "盈利测算失败，请稍后重试。" : "Profit analysis failed, please try again.");
   }
 }

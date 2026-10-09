@@ -275,42 +275,16 @@ export async function checkUrls(
 }
 
 /** Profit analysis input: fixed commission or price × percentage ranges. */
-export interface ProfitAnalysisInput {
-  fixedAmount?: number | null;
-  priceMin?: number | null;
-  priceMax?: number | null;
-  commissionPctMin?: number | null;
-  commissionPctMax?: number | null;
-  currency?: string | null;
-  assumedCvrPct?: number | null;
-}
-
-export interface BidSuggestion {
-  level: "conservative" | "moderate" | "aggressive";
-  maxCpc: number | null;
-  fraction: number;
-  note: string;
-}
-
-export interface ProfitScenario {
-  cvrPct: number;
-  profitPer100Clicks: number | null;
-  verdict: "profit" | "loss" | "unknown";
-}
-
-export interface ProfitAnalysisResult {
-  commission: {
-    commissionMin: number | null;
-    commissionMax: number | null;
-    currency: string | null;
-    method: "fixed" | "range" | "unknown";
-  };
-  breakEvenCpc: number | null;
-  assumedCvrPct: number;
-  bids: BidSuggestion[];
-  scenarios: ProfitScenario[];
-  currency: string | null;
-}
+import type {
+  ProfitAnalysisInput,
+  ProfitAnalysisResult,
+} from "./profit-types";
+export type {
+  ProfitAnalysisInput,
+  BidSuggestion,
+  ProfitScenario,
+  ProfitAnalysisResult,
+} from "./profit-types";
 
 /** Full profit analysis with bid suggestions (pure math, no LLM). */
 export async function analyzeProfit(

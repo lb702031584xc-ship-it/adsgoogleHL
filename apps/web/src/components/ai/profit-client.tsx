@@ -5,7 +5,8 @@ import { useDict } from "@/i18n/use-dict";
 import { EntityPageHeader } from "@/components/entities/ui";
 import { getOfferPerformanceAction } from "@/lib/api/p1-actions";
 import type { OfferPerformance } from "@/lib/api/p1";
-import { analyzeProfit, type ProfitAnalysisResult } from "@/lib/api/ai";
+import { analyzeProfitAction } from "@/lib/api/ai-actions";
+import type { ProfitAnalysisResult } from "@/lib/api/profit-types";
 
 export interface ProfitOfferOption {
   id: string;
@@ -75,7 +76,7 @@ export function ProfitClient({ offers }: { offers: ProfitOfferOption[] }) {
     setBidLoading(true);
     setBidError(null);
     try {
-      const res = await analyzeProfit({
+      const res = await analyzeProfitAction({
         fixedAmount: bidMode === "fixed" ? parseFloat(bidFixed) || null : null,
         priceMin: bidMode === "range" ? parseFloat(bidPriceMin) || null : null,
         priceMax: bidMode === "range" ? parseFloat(bidPriceMax) || null : null,
@@ -84,7 +85,11 @@ export function ProfitClient({ offers }: { offers: ProfitOfferOption[] }) {
         currency,
         assumedCvrPct: parseFloat(bidCvr) || 2,
       });
-      setBidResult(res.analysis);
+      if (!res.ok) {
+        setBidError(res.error);
+        return;
+      }
+      setBidResult(res.data.analysis);
     } catch (e) {
       setBidError(e instanceof Error ? e.message : "分析失败");
     } finally {
