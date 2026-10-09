@@ -124,8 +124,11 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
     const res = await listAnalysesAction();
     setBusy(null);
     if (!res.ok) return fail(res.error);
-    setAnalyses(res.data);
-    if (res.data.length > 0 && !analysisId) setAnalysisId(res.data[0].id);
+    // 防御：DB 里可能有 analysis 报告为空的脏记录（分析中途失败），直接过滤，
+    // 否则 step2 渲染 activeAnalysis.analysis.overallRisk 会抛 TypeError 导致整页白屏。
+    const valid = res.data.filter((a) => a && a.analysis);
+    setAnalyses(valid);
+    if (valid.length > 0 && !analysisId) setAnalysisId(valid[0].id);
   }
 
   async function finishStep2() {
@@ -390,7 +393,7 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
               </select>
             </div>
           )}
-          {activeAnalysis && (
+          {activeAnalysis?.analysis && (
             <dl className="mt-4 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
               <div className="rounded-lg bg-ink/5 p-3">
                 <dt className="text-ink/55">{d.analysis.risk}</dt>
@@ -418,7 +421,7 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
               </div>
             </dl>
           )}
-          {activeAnalysis && activeAnalysis.analysis.suggestions.length > 0 && (
+          {activeAnalysis?.analysis && activeAnalysis.analysis.suggestions.length > 0 && (
             <div className="mt-3 text-sm">
               <p className="font-medium text-ink/80">{d.analysis.suggestions}</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ink/70">
@@ -600,7 +603,7 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
             <div className="flex justify-between gap-4">
               <dt className="text-ink/55">{d.steps[2]}</dt>
               <dd className="font-medium text-ink">
-                {activeAnalysis ? `${d.analysis.risk}: ${activeAnalysis.analysis.overallRisk}` : "—"}
+                {activeAnalysis?.analysis ? `${d.analysis.risk}: ${activeAnalysis.analysis.overallRisk}` : "—"}
               </dd>
             </div>
             <div className="flex justify-between gap-4">
