@@ -6,12 +6,35 @@
  * show "queued, script executing" and poll the task until it is terminal.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CampaignToggleDict } from "@/i18n/dict/campaign-toggle";
 import {
   getCampaignToggleTaskAction,
   toggleCampaignAction,
   type CampaignToggleAction,
 } from "@/lib/api/campaign-toggle-actions";
+
+/**
+ * Serializable strings for the toggle button.
+ * The i18n dict contains a `confirmBody(name, action)` *function*, which RSC
+ * cannot serialize into a Client Component prop (it throws "Functions cannot
+ * be passed directly to Client Components" as a server-side exception).
+ * The server component must pre-resolve it per row and pass this plain object.
+ */
+export interface CampaignToggleStrings {
+  enable: string;
+  pause: string;
+  confirmEnableTitle: string;
+  confirmPauseTitle: string;
+  /** Pre-resolved server-side from confirmBody(campaignName, actionWord). */
+  confirmBody: string;
+  confirm: string;
+  cancel: string;
+  queued: string;
+  succeeded: string;
+  failed: string;
+  queueFailed: string;
+  taskId: string;
+  unknownError: string;
+}
 
 type Phase =
   | "idle"
@@ -26,15 +49,13 @@ const TERMINAL = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 export function CampaignToggleButton({
   campaignId,
   googleAccountId,
-  campaignName,
   currentStatus,
   t,
 }: {
   campaignId: string;
   googleAccountId: string;
-  campaignName: string;
   currentStatus: string;
-  t: CampaignToggleDict;
+  t: CampaignToggleStrings;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -60,7 +81,7 @@ export function CampaignToggleButton({
       pollTimer.current = setInterval(async () => {
         const res = await getCampaignToggleTaskAction(id);
         if (!res.ok) {
-          setError(res.error || t.toggle.unknownError);
+          setError(res.error || t.unknownError);
           setPhase("error");
           stopPolling();
           return;
@@ -84,7 +105,7 @@ export function CampaignToggleButton({
       googleAccountId
     );
     if (!res.ok) {
-      setError(res.error || t.toggle.unknownError);
+      setError(res.error || t.unknownError);
       setPhase("error");
       return;
     }
@@ -108,9 +129,9 @@ export function CampaignToggleButton({
         className={`inline-block rounded-md px-2.5 py-1 text-[13px] ${
           ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
         }`}
-        title={taskId ? `${t.toggle.taskId}: ${taskId}` : undefined}
+        title={taskId ? `${t.taskId}: ${taskId}` : undefined}
       >
-        {ok ? t.toggle.succeeded : t.toggle.failed}
+        {ok ? t.succeeded : t.failed}
       </span>
     );
   }
@@ -119,7 +140,7 @@ export function CampaignToggleButton({
     return (
       <span className="inline-flex items-center gap-2">
         <span className="text-[13px] text-red-600">
-          {t.toggle.queueFailed}: {error}
+          {t.queueFailed}: {error}
         </span>
         <button
           type="button"
@@ -129,7 +150,7 @@ export function CampaignToggleButton({
             setError(null);
           }}
         >
-          {t.toggle.cancel}
+          {t.cancel}
         </button>
       </span>
     );
@@ -140,11 +161,11 @@ export function CampaignToggleButton({
       <span className="inline-flex flex-col gap-1.5">
         <span className="text-[13px] font-medium text-ink">
           {action === "ENABLE"
-            ? t.toggle.confirmEnableTitle
-            : t.toggle.confirmPauseTitle}
+            ? t.confirmEnableTitle
+            : t.confirmPauseTitle}
         </span>
         <span className="max-w-[260px] text-[12px] text-ink/60">
-          {t.toggle.confirmBody(campaignName, t.toggle[action === "ENABLE" ? "enable" : "pause"])}
+          {t.confirmBody}
         </span>
         <span className="inline-flex gap-1.5">
           <button
@@ -156,14 +177,14 @@ export function CampaignToggleButton({
             }`}
             onClick={onConfirm}
           >
-            {t.toggle.confirm}
+            {t.confirm}
           </button>
           <button
             type="button"
             className={`${baseBtn} border-ink/20 text-ink hover:bg-ink/5`}
             onClick={() => setPhase("idle")}
           >
-            {t.toggle.cancel}
+            {t.cancel}
           </button>
         </span>
       </span>
@@ -174,9 +195,9 @@ export function CampaignToggleButton({
     return (
       <span
         className="inline-block rounded-md bg-sky-50 px-2.5 py-1 text-[13px] text-sky-700"
-        title={taskId ? `${t.toggle.taskId}: ${taskId}` : undefined}
+        title={taskId ? `${t.taskId}: ${taskId}` : undefined}
       >
-        {t.toggle.queued}
+        {t.queued}
       </span>
     );
   }
@@ -191,7 +212,7 @@ export function CampaignToggleButton({
       }`}
       onClick={() => setPhase("confirming")}
     >
-      {action === "ENABLE" ? t.toggle.enable : t.toggle.pause}
+      {action === "ENABLE" ? t.enable : t.pause}
     </button>
   );
 }

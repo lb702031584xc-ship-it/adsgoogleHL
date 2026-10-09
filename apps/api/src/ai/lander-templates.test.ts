@@ -212,11 +212,16 @@ describe("extractTemplateVariables", () => {
 });
 
 describe("built-in templates", () => {
-  it("ships exactly the three expected templates", () => {
+  it("ships exactly the eight expected templates", () => {
     expect(BUILT_IN_TEMPLATES.map((t) => t.id)).toEqual([
       "builtin-review",
       "builtin-comparison",
       "builtin-listicle",
+      "builtin-review-painstory",
+      "builtin-comparison-showdown",
+      "builtin-listicle-scenario",
+      "builtin-coupon",
+      "builtin-guide",
     ]);
     for (const t of BUILT_IN_TEMPLATES) {
       expect(isTemplateCategory(t.category)).toBe(true);
@@ -271,5 +276,100 @@ describe("built-in templates", () => {
   it("getBuiltInTemplate returns null for unknown ids", () => {
     expect(getBuiltInTemplate("nope")).toBeNull();
     expect(listTemplateVariables("nope")).toBeNull();
+  });
+});
+
+describe("task 4 — five new high-converting built-ins", () => {
+  const NEW_TEMPLATES = [
+    { id: "builtin-review-painstory", category: "review" },
+    { id: "builtin-comparison-showdown", category: "comparison" },
+    { id: "builtin-listicle-scenario", category: "listicle" },
+    { id: "builtin-coupon", category: "coupon" },
+    { id: "builtin-guide", category: "guide" },
+  ] as const;
+
+  it("registers all five templates with valid categories", () => {
+    expect(BUILT_IN_TEMPLATES).toHaveLength(8);
+    for (const { id, category } of NEW_TEMPLATES) {
+      const tpl = getBuiltInTemplate(id);
+      expect(tpl).not.toBeNull();
+      expect(tpl!.category).toBe(category);
+      expect(isTemplateCategory(category)).toBe(true);
+      expect(tpl!.name.zh).toBeTruthy();
+      expect(tpl!.name.en).toBeTruthy();
+      expect(tpl!.description.zh).toBeTruthy();
+      expect(tpl!.description.en).toBeTruthy();
+    }
+  });
+
+  it("ships an affiliate disclosure in both languages", () => {
+    for (const { id } of NEW_TEMPLATES) {
+      const tpl = getBuiltInTemplate(id)!;
+      expect(tpl.html.en).toContain("affiliate links");
+      expect(tpl.html.zh).toContain("推广链接");
+    }
+  });
+
+  it("renders variables escaped and keeps the document structure", () => {
+    const vars = {
+      productName: `<script>alert(1)</script>`,
+      painPoint: "back pain",
+      rating: "4.8",
+      reviewCount: "12,300",
+      pros: ["quiet", "cheap"],
+      cons: ["heavy"],
+      trustItems: ["50k users", "4.8★ rated"],
+      price: "$49",
+      originalPrice: "$99",
+      guaranteeText: "30-day guarantee",
+      challengerName: "Rival X",
+      verdictText: "Ours wins on value.",
+      products: [
+        { name: "A", price: "$49", rating: "4.8", ctaUrl: "https://a.example/deal", featured: true },
+        { name: "B", price: "$59", rating: "4.2", ctaUrl: "javascript:alert(1)" },
+      ],
+      introText: "Pick by scenario.",
+      discountInfo: "40% OFF",
+      couponCode: "SAVE40",
+      expiryText: "Ends Sunday",
+      guideSteps: ["Step one", "Step two"],
+      keyPoints: ["Point A"],
+      priceHint: "$40-$60",
+      ctaText: "Get Deal",
+      ctaUrl: "https://merchant.example/deal",
+    };
+    for (const { id, category } of NEW_TEMPLATES) {
+      const html = builtInHtmlTemplate(id, "en")!;
+      const out = renderTemplate(html, vars, {
+        productsLayout: category === "listicle" ? "cards" : "table",
+      });
+      // No raw injection survives.
+      expect(out).not.toContain("<script>alert(1)</script>");
+      expect(out).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+      // javascript: CTA degrades to a disabled cell, never a link.
+      expect(out).not.toContain("javascript:alert(1)");
+      // Document skeleton intact.
+      expect(out).toContain("<!DOCTYPE html>");
+      expect(out).toContain("lp-disclosure");
+      expect(out).toContain("Get Deal");
+    }
+  });
+
+  it("coupon template exposes its coupon variables; guide exposes steps", () => {
+    expect(listTemplateVariables("builtin-coupon")).toEqual(
+      expect.arrayContaining(["couponCode", "discountInfo", "expiryText"])
+    );
+    expect(listTemplateVariables("builtin-guide")).toEqual(
+      expect.arrayContaining(["guideSteps", "keyPoints"])
+    );
+    expect(listTemplateVariables("builtin-review-painstory")).toEqual(
+      expect.arrayContaining(["painPoint", "trustItems", "guaranteeText"])
+    );
+    expect(listTemplateVariables("builtin-comparison-showdown")).toEqual(
+      expect.arrayContaining(["challengerName", "verdictText", "products"])
+    );
+    expect(listTemplateVariables("builtin-listicle-scenario")).toEqual(
+      expect.arrayContaining(["introText", "products"])
+    );
   });
 });

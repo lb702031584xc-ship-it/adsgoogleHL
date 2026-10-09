@@ -27,6 +27,21 @@ export const zh = {
       reports: "📈 数据报表",
       system: "⚙️ 系统设置",
     },
+    // Per-item nav labels (step numbers are part of the value where used).
+    items: {
+      connectNetworks: "① 连接联盟网络",
+      offerList: "② Offer 列表",
+      offerNewImport: "③ 新建/导入 Offer",
+      launchAds: "⑨ 投广告",
+      trafficMonitoring: "⑪ 流量监控",
+      amazonPaapi: "① 配置 PA-API",
+      amazonDiscovery: "② 选品发现",
+      amazonImportAffiliate: "③ 导入为 Offer（进联盟流程）",
+      cashbackMonitor: "返利监控",
+      cashbackOffers: "返利 Offer",
+      cashbackRotations: "轮换配置",
+      rotationScript: "直链轮换 Script",
+    },
   },
   brand: {
     // `name` intentionally not translated.
@@ -108,6 +123,21 @@ export const en: typeof zh = {
       cashback: "🎫 Cashback",
       reports: "📈 Reports",
       system: "⚙️ System",
+    },
+    // Per-item nav labels (step numbers are part of the value where used).
+    items: {
+      connectNetworks: "① Connect a Network",
+      offerList: "② Offers",
+      offerNewImport: "③ New / Import Offer",
+      launchAds: "⑨ Create Ads",
+      trafficMonitoring: "⑪ Traffic Monitoring",
+      amazonPaapi: "① Configure PA-API",
+      amazonDiscovery: "② Product Discovery",
+      amazonImportAffiliate: "③ Import as Offer (into affiliate flow)",
+      cashbackMonitor: "Cashback Monitor",
+      cashbackOffers: "Cashback Offers",
+      cashbackRotations: "Rotation Settings",
+      rotationScript: "Direct-Link Rotation Script",
     },
   },
   brand: {

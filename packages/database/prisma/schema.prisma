@@ -1695,7 +1695,9 @@ model LandingPageOptimizationTask {
 model LandingPageRewrite {
   id               String   @id @db.Uuid
   tenantId         String   @map("tenant_id") @db.Uuid
-  landingPageId    String   @map("landing_page_id") @db.Uuid
+  /// Nullable since task 4: template-sourced rewrite briefs have no source
+  /// LandingPage yet (base HTML lives in rewritten_content.baseHtml).
+  landingPageId    String?  @map("landing_page_id") @db.Uuid
   originalScore    Int      @map("original_score")
   issues           Json     @default("[]")
   rewrittenContent Json     @map("rewritten_content")

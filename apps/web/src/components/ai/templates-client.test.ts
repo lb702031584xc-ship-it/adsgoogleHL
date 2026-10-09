@@ -73,6 +73,29 @@ describe("TemplatesGallery", () => {
     );
     expect(html).toContain("No templates in this category yet.");
   });
+
+  it("falls back to the lander-new dict for coupon/guide category labels", () => {
+    const couponTemplate: LanderTemplate = {
+      id: "builtin-coupon",
+      tenantId: null,
+      name: "Coupon Deal Page",
+      category: "coupon",
+      description: null,
+      thumbnailUrl: null,
+      isBuiltIn: true,
+      variables: ["couponCode"],
+    };
+    const html = renderToStaticMarkup(
+      createElement(TemplatesGallery, {
+        templates: [couponTemplate],
+        selectedId: null,
+        onSelect: () => {},
+      })
+    );
+    // Outside I18nProvider the English dictionary is used.
+    expect(html).toContain("Coupon");
+    expect(html).toContain("Coupon Deal Page");
+  });
 });
 
 describe("VariableFields", () => {

@@ -11,6 +11,10 @@ import {
   SESSION_COOKIE_NAME,
   createSession,
 } from "../auth/sessions.js";
+import {
+  TEST_AI_SETTINGS_PEPPER,
+  encryptSecret,
+} from "../ai/crypto.js";
 import { createObservabilityErrorHandler } from "../observability/index.js";
 import { registerLanderIntelRoutes } from "./lander-intel.js";
 
@@ -41,10 +45,21 @@ function sortRows(rows: Row[], orderBy: any): Row[] {
 
 function mkStore(rows: Row[]) {
   return {
-    findFirst: async ({ where, orderBy }: any) =>
-      sortRows(rows.filter((r) => matches(r, where)), orderBy)[0] ?? null,
-    findMany: async ({ where, orderBy, skip, take }: any) => {
-      let out = sortRows(rows.filter((r) => matches(r, where)), orderBy);
+    findFirst: async (args: any = {}) => {
+      const { where, orderBy } = args;
+      return (
+        sortRows(
+          rows.filter((r) => matches(r, where)),
+          orderBy
+        )[0] ?? null
+      );
+    },
+    findMany: async (args: any = {}) => {
+      const { where, orderBy, skip, take } = args;
+      let out = sortRows(
+        rows.filter((r) => matches(r, where)),
+        orderBy
+      );
       if (typeof skip === "number") out = out.slice(skip);
       if (typeof take === "number") out = out.slice(0, take);
       return out.map((r) => ({ ...r }));
@@ -75,12 +90,19 @@ function makeFakePrisma() {
   const tenants: Row[] = [];
   const users: Row[] = [];
   const sessions: Row[] = [];
+  const aiSettings: Row[] = [];
   const landerTemplates: Row[] = [];
   const landingPages: Row[] = [];
+  const landingPageRewrites: Row[] = [];
   const offers: Row[] = [];
   const stores = {
     tenant: mkStore(tenants),
     user: mkStore(users),
+    aiSetting: mkStore(aiSettings),
+    landerTemplate: mkStore(landerTemplates),
+    landingPage: mkStore(landingPages),
+    landingPageRewrite: mkStore(landingPageRewrites),
+    offer: mkStore(offers),
     session: {
       create: async ({ data }: any) => {
         const row = { createdAt: new Date(), ...data };
@@ -97,9 +119,6 @@ function makeFakePrisma() {
         return out;
       },
     },
-    landerTemplate: mkStore(landerTemplates),
-    landingPage: mkStore(landingPages),
-    offer: mkStore(offers),
   };
   return stores;
 }
@@ -179,11 +198,16 @@ describe("GET /api/v1/landing-pages/templates", () => {
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.total).toBe(3);
+    expect(body.total).toBe(8);
     expect(body.items.map((i: any) => i.id)).toEqual([
       "builtin-review",
       "builtin-comparison",
       "builtin-listicle",
+      "builtin-review-painstory",
+      "builtin-comparison-showdown",
+      "builtin-listicle-scenario",
+      "builtin-coupon",
+      "builtin-guide",
     ]);
     for (const item of body.items) {
       expect(item.isBuiltIn).toBe(true);
@@ -201,8 +225,30 @@ describe("GET /api/v1/landing-pages/templates", () => {
       headers: cookie(auth.token),
     });
     const body = res.json();
-    expect(body.total).toBe(1);
-    expect(body.items[0].id).toBe("builtin-review");
+    expect(body.total).toBe(2);
+    expect(body.items.map((i: any) => i.id).sort()).toEqual(
+      ["builtin-review", "builtin-review-painstory"].sort()
+    );
+  });
+
+  it("filters by the new coupon/guide categories", async () => {
+    const app = await buildApp(fake);
+    const coupon = await app.inject({
+      method: "GET",
+      url: "/api/v1/landing-pages/templates?category=coupon",
+      headers: cookie(auth.token),
+    });
+    expect(coupon.json().items.map((i: any) => i.id)).toEqual([
+      "builtin-coupon",
+    ]);
+    const guide = await app.inject({
+      method: "GET",
+      url: "/api/v1/landing-pages/templates?category=guide",
+      headers: cookie(auth.token),
+    });
+    expect(guide.json().items.map((i: any) => i.id)).toEqual([
+      "builtin-guide",
+    ]);
   });
 
   it("rejects an invalid category", async () => {
@@ -248,7 +294,7 @@ describe("GET /api/v1/landing-pages/templates", () => {
       headers: cookie(auth.token),
     });
     const body = res.json();
-    expect(body.total).toBe(4);
+    expect(body.total).toBe(9);
     const names = body.items.map((i: any) => i.name);
     expect(names).toContain("Mine");
     expect(names).not.toContain("Other Tenant Template");
@@ -550,5 +596,165 @@ describe("POST /api/v1/landing-pages/templates/:id/use", () => {
       payload: { offerId, name: "x", variables: {} },
     });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe("POST /api/v1/landing-pages/templates/:id/rewrite-brief", () => {
+  let fake: FakePrisma;
+  let auth: { tenantId: string; token: string };
+  let seenChatArgs: any;
+
+  async function seedLlm() {
+    await (fake as any).aiSetting.create({
+      data: { key: "llm.baseUrl", value: "https://api.test/v1" },
+    });
+    await (fake as any).aiSetting.create({
+      data: { key: "llm.model", value: "test-model" },
+    });
+    await (fake as any).aiSetting.create({
+      data: {
+        key: "llm.apiKeyEnc",
+        value: encryptSecret("<redacted>", TEST_AI_SETTINGS_PEPPER),
+      },
+    });
+  }
+
+  async function buildBriefApp() {
+    const app = Fastify({ logger: false });
+    app.setErrorHandler(createObservabilityErrorHandler());
+    await registerLanderIntelRoutes(app, {
+      prisma: fake as unknown as PrismaClient,
+      fetchPageHtmlImpl: (async () => {
+        throw new Error("not used");
+      }) as any,
+      chatJsonImpl: (async (args: any) => {
+        seenChatArgs = args;
+        return {
+          rewrites: [
+            {
+              element: "优惠码",
+              location: "优惠码展示框",
+              before: "SAVE40",
+              after: "SAVE40PLUS",
+              reason: "测试改写",
+            },
+          ],
+          estimatedNewScore: 88,
+        };
+      }) as any,
+    });
+    return app;
+  }
+
+  beforeEach(async () => {
+    fake = makeFakePrisma();
+    auth = await seedAuth(fake);
+    seenChatArgs = null;
+    await seedLlm();
+  });
+
+  const BRIEF = {
+    lang: "zh",
+    variables: {
+      productName: "TestProduct",
+      discountInfo: "40% OFF",
+      couponCode: "SAVE40",
+      price: "$49",
+      originalPrice: "$99",
+      expiryText: "Ends Sunday",
+      ctaText: "立即抢购",
+      ctaUrl: "https://merchant.example/deal",
+    },
+    requirements: {
+      targetAudience: "25-35 岁精打细算的上班族",
+      sellingPoints: ["限时 4 折", "30 天无理由退款"],
+      tone: "urgent",
+      ctaText: "立即抢购",
+      language: "zh",
+      length: "short",
+    },
+  };
+
+  it("renders the template and stores a DRAFT brief with the base HTML", async () => {
+    const app = await buildBriefApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/landing-pages/templates/builtin-coupon/rewrite-brief",
+      headers: { ...cookie(auth.token), "content-type": "application/json" },
+      payload: BRIEF,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    const rw = body.rewrite;
+    expect(rw.status).toBe("DRAFT");
+    expect(rw.landingPageId).toBeNull();
+    expect(rw.rewrittenContent.source).toEqual({
+      kind: "template",
+      templateId: "builtin-coupon",
+      lang: "zh",
+    });
+    expect(rw.rewrittenContent.baseHtml).toContain("TestProduct");
+    expect(rw.rewrittenContent.rewrites).toHaveLength(1);
+    expect(rw.rewrittenContent.appliedCount).toBe(1);
+    expect(rw.rewrittenContent.requirements.targetAudience).toBe(
+      "25-35 岁精打细算的上班族"
+    );
+    expect(Number.isFinite(rw.originalScore)).toBe(true);
+    expect(Number.isFinite(rw.newScore)).toBe(true);
+    // The brief actually reached the LLM prompt.
+    expect(seenChatArgs.user).toContain("25-35 岁精打细算的上班族");
+    expect(seenChatArgs.user).toContain("限时 4 折");
+    expect(seenChatArgs.user).toContain("TestProduct");
+  });
+
+  it("requires requirements and rejects malformed ones with 400", async () => {
+    const app = await buildBriefApp();
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/v1/landing-pages/templates/builtin-coupon/rewrite-brief",
+      headers: { ...cookie(auth.token), "content-type": "application/json" },
+      payload: { lang: "zh", variables: {} },
+    });
+    expect(missing.statusCode).toBe(400);
+
+    const badTone = await app.inject({
+      method: "POST",
+      url: "/api/v1/landing-pages/templates/builtin-coupon/rewrite-brief",
+      headers: { ...cookie(auth.token), "content-type": "application/json" },
+      payload: { requirements: { tone: "nope" } },
+    });
+    expect(badTone.statusCode).toBe(400);
+  });
+
+  it("returns 404 for an unknown template and 401 without a session", async () => {
+    const app = await buildBriefApp();
+    const notFound = await app.inject({
+      method: "POST",
+      url: "/api/v1/landing-pages/templates/nope/rewrite-brief",
+      headers: { ...cookie(auth.token), "content-type": "application/json" },
+      payload: BRIEF,
+    });
+    expect(notFound.statusCode).toBe(404);
+
+    const noAuth = await app.inject({
+      method: "POST",
+      url: "/api/v1/landing-pages/templates/builtin-coupon/rewrite-brief",
+      headers: { "content-type": "application/json" },
+      payload: BRIEF,
+    });
+    expect(noAuth.statusCode).toBe(401);
+  });
+
+  it("returns 502 when the LLM is not configured", async () => {
+    fake = makeFakePrisma();
+    auth = await seedAuth(fake);
+    const app = await buildBriefApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/landing-pages/templates/builtin-coupon/rewrite-brief",
+      headers: { ...cookie(auth.token), "content-type": "application/json" },
+      payload: BRIEF,
+    });
+    expect(res.statusCode).toBe(502);
   });
 });

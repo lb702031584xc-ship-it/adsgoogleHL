@@ -10,7 +10,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDict } from "@/i18n/use-dict";
+import { useI18n } from "@/i18n/I18nProvider";
 import type { Dict } from "@/i18n/dictionaries";
+import {
+  templateCategoryLabel,
+  type LanderNewLang,
+} from "@/i18n/dict/lander-new";
 import { EntityPageHeader, ErrorState } from "@/components/entities/ui";
 import {
   listLanderTemplatesAction,
@@ -31,6 +36,8 @@ const CATEGORY_TABS: CategoryTab[] = [
   "comparison",
   "listicle",
   "quiz",
+  "coupon",
+  "guide",
 ];
 
 /** Variables rendered as one-per-line textareas. */
@@ -80,8 +87,28 @@ export function toPreviewVariables(values: Record<string, string>): {
   return { variables, productsJsonError };
 }
 
-function categoryLabel(d: Dict, category: LanderTemplateCategory): string {
-  return d.ai.lander.templates.categories[category];
+/** Current UI language, safe to call outside I18nProvider (unit tests). */
+function useLangSafe(): LanderNewLang {
+  try {
+    const lang = useI18n().lang;
+    return lang === "en" ? "en" : "zh";
+  } catch {
+    return "en";
+  }
+}
+
+function categoryLabel(
+  d: Dict,
+  category: LanderTemplateCategory,
+  lang: LanderNewLang
+): string {
+  // New categories (coupon/guide) are not in the main dictionary yet —
+  // fall back to the lander-new dict.
+  return templateCategoryLabel(
+    d.ai.lander.templates.categories as Record<string, string | undefined>,
+    category,
+    lang
+  );
 }
 
 /** Presentational template card grid — unit-tested via renderToStaticMarkup. */
@@ -95,6 +122,7 @@ export function TemplatesGallery({
   onSelect: (id: string) => void;
 }) {
   const dict = useDict();
+  const lang = useLangSafe();
   const t = dict.ai.lander.templates;
   if (templates.length === 0) {
     return <p className="mt-6 text-sm text-ink/55">{t.noTemplates}</p>;
@@ -116,7 +144,7 @@ export function TemplatesGallery({
           >
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-ink/10 px-2.5 py-0.5 text-xs font-medium text-ink/70">
-                {categoryLabel(dict, tpl.category)}
+                {categoryLabel(dict, tpl.category, lang)}
               </span>
               <span
                 className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -212,7 +240,9 @@ interface OfferOption {
 }
 
 export function TemplatesClient() {
-  const d = useDict().ai.lander.templates;
+  const dict = useDict();
+  const d = dict.ai.lander.templates;
+  const lang = useLangSafe();
   const router = useRouter();
   const [tab, setTab] = useState<CategoryTab>("all");
   const [templates, setTemplates] = useState<LanderTemplate[]>([]);
@@ -358,7 +388,7 @@ export function TemplatesClient() {
                 : "border border-ink/15 bg-white text-ink/70 hover:bg-ink/5"
             }`}
           >
-            {d.categories[c]}
+            {c === "all" ? d.categories.all : categoryLabel(dict, c, lang)}
           </button>
         ))}
       </div>

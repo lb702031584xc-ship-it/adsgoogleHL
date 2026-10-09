@@ -112,7 +112,13 @@ function asHttpUrl(v: unknown): string {
   return parsed.toString();
 }
 
-const CASHBACK_NETWORKS = [
+/**
+ * 建议用的返利网络名称：仅作前端自动补全/建议，不做白名单校验。
+ *
+ * 返利网络允许手动输入任意名称 —— asCashbackNetwork 只做非空 + 长度校验，
+ * 不再限制为列表成员（历史行为是白名单，已放开）。
+ */
+export const CASHBACK_NETWORKS = [
   "rakuten",
   "55haitao",
   "ebates",
@@ -121,12 +127,10 @@ const CASHBACK_NETWORKS = [
 ] as const;
 
 function asCashbackNetwork(v: unknown): string {
-  const s = asTrimmedString(v)?.toLowerCase();
+  const s = asTrimmedString(v);
   if (!s) throw new ValidationError("cashbackNetwork is required");
-  if (!(CASHBACK_NETWORKS as readonly string[]).includes(s)) {
-    throw new ValidationError(
-      `cashbackNetwork must be one of: ${CASHBACK_NETWORKS.join(", ")}`
-    );
+  if (s.length > 64) {
+    throw new ValidationError("cashbackNetwork must be 1-64 characters");
   }
   return s;
 }

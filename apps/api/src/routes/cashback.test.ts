@@ -404,14 +404,35 @@ describe("cashback routes", () => {
     expect(links[0].offerId).toBe(offers[0].id);
   });
 
-  it("rejects invalid network / url", async () => {
-    const badNetwork = await app.inject({
-      method: "POST",
-      url: "/api/v1/cashback-offers",
-      headers: cookie(token),
-      payload: { cashbackNetwork: "nope", originalUrl: "https://x.example/" },
-    });
-    expect(badNetwork.statusCode).toBe(400);
+  it("accepts arbitrary cashback network names (no whitelist)", async () => {
+    for (const network of ["nope", "MyCustomNetwork 返利", "  padded  "]) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/v1/cashback-offers",
+        headers: cookie(token),
+        payload: {
+          cashbackNetwork: network,
+          originalUrl: "https://x.example/",
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().cashbackOffer.cashbackNetwork).toBe(network.trim());
+    }
+  });
+
+  it("rejects empty / too-long network and invalid url", async () => {
+    for (const network of ["", "   ", "x".repeat(65)]) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/v1/cashback-offers",
+        headers: cookie(token),
+        payload: {
+          cashbackNetwork: network,
+          originalUrl: "https://x.example/",
+        },
+      });
+      expect(res.statusCode).toBe(400);
+    }
 
     const badUrl = await app.inject({
       method: "POST",

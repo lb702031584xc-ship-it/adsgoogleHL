@@ -251,7 +251,9 @@ export type LanderTemplateCategory =
   | "review"
   | "comparison"
   | "listicle"
-  | "quiz";
+  | "quiz"
+  | "coupon"
+  | "guide";
 
 export interface LanderTemplate {
   id: string;

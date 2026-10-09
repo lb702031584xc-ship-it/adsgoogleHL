@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getLang } from "@/i18n/lang";
 import { getDictionary } from "@/i18n/dictionaries";
@@ -7,6 +6,7 @@ import { zh as experimentZh, en as experimentEn } from "@/i18n/dict/experiment";
 import { LangSwitcher } from "@/components/lang-switcher";
 import { getCurrentUser, getViewTenant } from "@/lib/api/auth";
 import { clearViewTenantAction, logoutAction } from "@/lib/api/auth-actions";
+import { TrackNav } from "@/components/track-nav";
 
 /**
  * Authenticated app shell: sidebar nav + user footer.
@@ -38,6 +38,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   }
 
   const s = t.common.nav.sections;
+  const ni = t.common.nav.items;
   const navSections: NavSection[] = isResearcher
     ? [{ title: "🧪 Research", items: [researchNavItem] }]
     : [
@@ -51,37 +52,37 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         {
           title: s.affiliate,
           items: [
-            { href: "/networks", label: "① 连接联盟网络" },
-            { href: "/offers", label: "② Offer 列表" },
-            { href: "/offers/new", label: "③ 新建/导入 Offer" },
-            { href: "/ai/analyze", label: "④ AI 分析" },
-            { href: "/ai/terms", label: "⑤ 条款检查" },
-            { href: "/ai/compliance", label: "⑥ 合规检查" },
-            { href: "/ai/profit", label: "⑦ 盈利测算" },
-            { href: "/landing-pages", label: "⑧ 落地页" },
-            { href: "/ads/auto-create", label: "⑨ 投广告" },
-            { href: "/campaigns", label: "⑩ Campaign 管理" },
-            { href: "/monitoring", label: "⑪ 流量监控" },
+            { href: "/networks", label: ni.connectNetworks },
+            { href: "/offers", label: ni.offerList },
+            { href: "/offers/new", label: ni.offerNewImport },
+            { href: "/ai/analyze", label: t.ai.nav.analyze },
+            { href: "/ai/terms", label: t.ai.nav.terms },
+            { href: "/ai/compliance", label: t.ai.nav.compliance },
+            { href: "/ai/profit", label: t.ai.nav.profit },
+            { href: "/landing-pages", label: t.common.nav.landingPages },
+            { href: "/ads/auto-create", label: ni.launchAds },
+            { href: "/campaigns", label: t.common.nav.campaigns },
+            { href: "/monitoring", label: ni.trafficMonitoring },
           ],
         },
         {
           title: s.amazon,
           items: [
-            { href: "/admin/ai-settings", label: "① 配置 PA-API" },
-            { href: "/amazon/discovery", label: "② 选品发现" },
-            { href: "/offers", label: "③ 导入为 Offer（进联盟流程④）" },
+            // PA-API config page: admin-only (API credentials), hidden from members.
+            ...(isAdmin
+              ? [{ href: "/admin/ai-settings", label: ni.amazonPaapi }]
+              : []),
+            { href: "/amazon/discovery", label: ni.amazonDiscovery },
+            { href: "/offers", label: ni.amazonImportAffiliate },
           ],
         },
         {
           title: s.cashback,
           items: [
-            { href: "/cashback/offers", label: "① 添加返利 Offer" },
-            { href: "/cashback/rotations", label: "② 配置轮换" },
-            { href: "/cashback/rate-watch", label: "③ 返利监控" },
-            { href: "/cashback/terms-watch", label: t.cashbackTermsWatch.termsWatch.title },
-            { href: "/cashback/redirect-check", label: t.cashbackRedirectCheck.page.title },
-            { href: "/cashback/rate-compare", label: t.cashbackRateCompare.rateCompare.title },
-            { href: "/ads/rotation-script", label: "④ 直链轮换 Script" },
+            { href: "/cashback/monitor", label: ni.cashbackMonitor },
+            { href: "/cashback/offers", label: ni.cashbackOffers },
+            { href: "/cashback/rotations", label: ni.cashbackRotations },
+            { href: "/ads/rotation-script", label: ni.rotationScript },
           ],
         },
         {
@@ -124,25 +125,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             {t.common.brand.phase("Phase 8.4.7")}
           </p>
         </div>
-        <nav className="flex flex-1 flex-col gap-4 px-3 pb-8">
-          {navSections.map((section) => (
-            <div key={section.title}>
-              <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wider text-mist/50">
-                {section.title}
-              </p>
-              <div className="flex flex-col gap-0.5">
-                {section.items.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="rounded-md px-3 py-2 text-sm text-mist/85 transition hover:bg-white/10 hover:text-white"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          ))}
+        <nav className="flex flex-1 flex-col gap-4 px-3 pb-8" aria-label="Tracks">
+          <TrackNav sections={navSections} />
         </nav>
         <div className="border-t border-white/10 px-5 py-4">
           <p className="truncate text-sm font-medium text-white">{user.email}</p>

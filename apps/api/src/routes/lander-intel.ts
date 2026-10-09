@@ -15,6 +15,7 @@ import {
   decryptSecret,
 } from "../ai/crypto.js";
 import {
+  AiError,
   chatJson,
   chatJsonValidated,
   type ChatJsonArgs,
@@ -40,6 +41,15 @@ import {
   checkCompetitorWatch,
   COMPETITOR_WATCH_MIN_INTERVAL_S,
 } from "../queue/competitor-watch-worker.js";
+import {
+  applyRewritesToHtml,
+  buildRequirementsRewritePrompt,
+  pageTextExcerpt,
+  parseRewriteRequirements,
+  rescoreRewrittenHtml,
+  validateRewriteShape,
+  type RewriteRequirements,
+} from "../ai/lp-rewriter.js";
 
 /**
  * Lander Intel ① — landing-page efficiency analyzer API
@@ -105,6 +115,17 @@ async function optionalLlmConfig(
     model: out.model,
     apiKey: decryptSecret(out.apiKeyEnc, pepper),
   };
+}
+
+/** Throw AiError (→ 502) when the LLM is not configured. */
+async function requireLlmConfig(prisma: PrismaClient): Promise<LlmConfig> {
+  const cfg = await optionalLlmConfig(prisma);
+  if (!cfg) {
+    throw new AiError(
+      "AI 未配置：请先在「AI 设置」中填写模型服务地址、模型与密钥"
+    );
+  }
+  return cfg;
 }
 
 function parsePagination(
@@ -570,6 +591,12 @@ function registerCompetitorWatchRoutes(
 // - POST /api/v1/landing-pages/templates/:id/use { offerId, name,
 //      variables?, url? } → rendered HTML stored as
 //      LandingPage.htmlContent; returns the created landing page
+// - POST /api/v1/landing-pages/templates/:id/rewrite-brief
+//      { lang?, variables?, requirements } → renders the template, generates
+//      a requirements-driven AI rewrite DRAFT (landingPageId is null; the
+//      rendered HTML is stored in rewrittenContent.baseHtml), and returns
+//      previewHtml (the rewritten HTML, i.e. what deploy would persist).
+//      Deploy it with POST /api/v1/landing-pages/rewrites/:rewriteId/deploy.
 // ---------------------------------------------------------------------------
 
 interface TemplateListItem {
@@ -746,7 +773,7 @@ function registerLanderTemplateRoutes(
         : null;
     if (categoryFilter && !isTemplateCategory(categoryFilter)) {
       throw new ValidationError(
-        "category must be one of review|comparison|listicle|quiz"
+        "category must be one of review|comparison|listicle|quiz|coupon|guide"
       );
     }
 
@@ -836,7 +863,7 @@ function registerLanderTemplateRoutes(
     if (!name) throw new ValidationError("name is required");
     if (!isTemplateCategory(body.category)) {
       throw new ValidationError(
-        "category must be one of review|comparison|listicle|quiz"
+        "category must be one of review|comparison|listicle|quiz|coupon|guide"
       );
     }
     const htmlTemplate =
@@ -973,6 +1000,138 @@ function registerLanderTemplateRoutes(
         created.createdAt instanceof Date
           ? created.createdAt.toISOString()
           : created.createdAt,
+    };
+  });
+
+  /**
+   * Rewrite brief from a template (AI rewrite workbench): render the
+   * template with variables, then generate a requirements-driven rewrite
+   * DRAFT via the shared strict-JSON rewrite chain. No LandingPage exists
+   * yet, so landingPageId is null and the rendered HTML is stored in
+   * rewrittenContent.baseHtml; deploy it later with
+   * POST /api/v1/landing-pages/rewrites/:rewriteId/deploy.
+   */
+  app.post<{
+    Params: { id: string };
+    Body: { lang?: unknown; variables?: unknown; requirements?: unknown };
+  }>("/api/v1/landing-pages/templates/:id/rewrite-brief", async (request) => {
+    const info = await requireSession(deps, request);
+    const body = (request.body ?? {}) as {
+      lang?: unknown;
+      variables?: unknown;
+      requirements?: unknown;
+    };
+    const lang = resolveLang(
+      typeof body.lang === "string" ? body.lang : undefined
+    );
+    const src = await findTemplateSource(
+      prisma,
+      info.tenantId,
+      request.params.id,
+      lang
+    );
+
+    let requirements: RewriteRequirements | undefined;
+    try {
+      requirements = parseRewriteRequirements(body.requirements);
+    } catch (e) {
+      // Input-shape problems are the caller's fault (400), not an LLM
+      // failure (502).
+      if (e instanceof AiError) throw new ValidationError(e.message);
+      throw e;
+    }
+    if (!requirements) {
+      throw new ValidationError("requirements is required");
+    }
+
+    const variables: TemplateVariables =
+      body.variables && typeof body.variables === "object"
+        ? (body.variables as TemplateVariables)
+        : {};
+    const baseHtml = renderTemplate(src.htmlTemplate, variables, {
+      productsLayout: productsLayoutFor(src.category),
+    });
+
+    const llm = await requireLlmConfig(prisma);
+    const { system, user } = buildRequirementsRewritePrompt({
+      pageName: src.name,
+      pageUrl: "",
+      pageText: pageTextExcerpt(baseHtml),
+      requirements,
+    });
+    const args: ChatJsonArgs = {
+      baseUrl: llm.baseUrl,
+      model: llm.model,
+      apiKey: llm.apiKey,
+      system,
+      user,
+    };
+    let llmResult;
+    try {
+      llmResult = await chatJsonValidated(
+        args,
+        validateRewriteShape,
+        deps.chatJsonImpl ?? chatJson
+      );
+    } catch (e) {
+      if (e instanceof AiError) throw e;
+      throw new AiError("LLM request failed");
+    }
+
+    // Deterministic textual apply for the estimate, then re-score with the
+    // existing analyzer — same convention as the page rewrite route.
+    const applied = applyRewritesToHtml(baseHtml, llmResult.rewrites);
+    const originalScore = Math.round(rescoreRewrittenHtml(baseHtml));
+    const newScore = Math.round(rescoreRewrittenHtml(applied.html));
+
+    const row = (await prisma.landingPageRewrite.create({
+      data: {
+        id: randomUUID(),
+        tenantId: info.tenantId,
+        landingPageId: null,
+        originalScore,
+        issues: [],
+        rewrittenContent: JSON.parse(
+          JSON.stringify({
+            rewrites: llmResult.rewrites,
+            aiEstimatedNewScore: llmResult.aiEstimatedNewScore,
+            appliedCount: applied.applied,
+            skipped: applied.skipped,
+            requirements,
+            source: { kind: "template", templateId: src.id, lang },
+            baseHtml,
+          })
+        ) as never,
+        newScore,
+        status: "DRAFT",
+      },
+    })) as {
+      id: string;
+      landingPageId: string | null;
+      originalScore: number;
+      issues: unknown;
+      rewrittenContent: unknown;
+      newScore: number | null;
+      status: string;
+      createdAt: Date;
+    };
+
+    return {
+      rewrite: {
+        id: row.id,
+        landingPageId: row.landingPageId,
+        originalScore: row.originalScore,
+        issues: row.issues,
+        rewrittenContent: row.rewrittenContent,
+        newScore: row.newScore,
+        status: row.status,
+        createdAt:
+          row.createdAt instanceof Date
+            ? row.createdAt.toISOString()
+            : row.createdAt,
+      },
+      // Rendered result with the rewrites applied (what deploy persists).
+      previewHtml: applied.html,
     };
   });
 }

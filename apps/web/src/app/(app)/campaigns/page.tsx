@@ -18,9 +18,34 @@ import {
   zh as campaignToggleZh,
   en as campaignToggleEn,
 } from "@/i18n/dict/campaign-toggle";
-import { CampaignToggleButton } from "./_components/campaign-toggle-button";
+import {
+  CampaignToggleButton,
+  type CampaignToggleStrings,
+} from "./_components/campaign-toggle-button";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Build serializable toggle strings for one campaign row.
+ * `confirmBody` is a *function* in the i18n dict; RSC cannot serialize
+ * functions into Client Component props, so it is resolved here on the
+ * server (this was the "Application error: a server-side exception" on
+ * /campaigns).
+ */
+function toggleStringsFor(
+  c: Campaign,
+  tt: typeof campaignToggleZh
+): CampaignToggleStrings {
+  const action = c.status === "PAUSED" ? "ENABLE" : "PAUSE";
+  const { confirmBody, ...rest } = tt.toggle;
+  return {
+    ...rest,
+    confirmBody: confirmBody(
+      c.name,
+      tt.toggle[action === "ENABLE" ? "enable" : "pause"]
+    ),
+  };
+}
 
 function parsePageParam(value: string | undefined, fallback: number): number {
   const n = Number(value);
@@ -43,6 +68,9 @@ export default async function CampaignsPage({
   try {
     result = await entityApi.campaigns.list(page, pageSize);
   } catch (e) {
+    // redirect() throws NEXT_REDIRECT — never swallow it, or the login
+    // redirect breaks and the user sees a raw "NEXT_REDIRECT" error state.
+    if (e instanceof Error && e.message === "NEXT_REDIRECT") throw e;
     return (
       <div>
         <EntityPageHeader
@@ -90,9 +118,8 @@ export default async function CampaignsPage({
         <CampaignToggleButton
           campaignId={c.id}
           googleAccountId={c.googleAccountId}
-          campaignName={c.name}
           currentStatus={c.status}
-          t={tt}
+          t={toggleStringsFor(c, tt)}
         />
       ),
     },

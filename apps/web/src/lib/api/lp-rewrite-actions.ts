@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getApiBaseUrl } from "./entities-config";
 import { sessionHeaders } from "./session";
+import type { RewriteRequirements } from "../rewrite-brief";
 
 export interface LpRewritePair {
   element: string;
@@ -20,7 +21,8 @@ export interface LpRewritePair {
 
 export interface LpRewriteItem {
   id: string;
-  landingPageId: string;
+  /** Null for template-sourced briefs (no source page yet). */
+  landingPageId: string | null;
   originalScore: number;
   issues: Array<{ dimension?: string; severity?: string; message?: string }>;
   rewrittenContent: {
@@ -28,6 +30,15 @@ export interface LpRewriteItem {
     aiEstimatedNewScore?: number;
     appliedCount?: number;
     skipped?: Array<{ element: string; reason: string }>;
+    requirements?: RewriteRequirements | null;
+    source?: {
+      kind?: string;
+      landingPageId?: string;
+      templateId?: string;
+      lang?: string;
+    };
+    baseHtml?: string;
+    deployedLandingPageId?: string;
     originalBackup?: {
       htmlContent?: string;
       name?: string;
@@ -36,8 +47,41 @@ export interface LpRewriteItem {
     };
   };
   newScore: number | null;
-  status: "DRAFT" | "APPLIED" | string;
+  status: "DRAFT" | "APPLIED" | "DEPLOYED" | string;
   createdAt: string;
+}
+
+export interface DeployedLandingPage {
+  id: string;
+  offerId: string;
+  name: string;
+  url: string;
+  domain: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface RewritableLandingPage {
+  id: string;
+  name: string;
+  offerId: string;
+  offerName: string;
+  updatedAt: string;
+}
+
+/** List landing pages that have HTML content (rewrite workbench source picker). */
+export async function listRewritableLandingPagesAction(): Promise<
+  LpRewriteActionResult<{ items: RewritableLandingPage[]; total: number }>
+> {
+  try {
+    const data = await lpRewriteFetch<{
+      items: RewritableLandingPage[];
+      total: number;
+    }>("/api/v1/landing-pages/rewritable");
+    return { ok: true, data };
+  } catch (e) {
+    return toActionError(e);
+  }
 }
 
 export type LpRewriteActionResult<T> =
@@ -98,17 +142,24 @@ function toActionError(e: unknown): { ok: false; error: string } {
   };
 }
 
-/** Generate a rewrite draft for a landing page (issues optional). */
+/** Generate a rewrite draft for a landing page (issues and/or workbench requirements). */
 export async function createLpRewriteAction(
   landingPageId: string,
-  issues?: Array<{ dimension?: string; severity?: string; message?: string }>
-): Promise<LpRewriteActionResult<{ rewrite: LpRewriteItem }>> {
+  issues?: Array<{ dimension?: string; severity?: string; message?: string }>,
+  requirements?: RewriteRequirements
+): Promise<LpRewriteActionResult<{ rewrite: LpRewriteItem; previewHtml: string }>> {
   try {
-    const data = await lpRewriteFetch<{ rewrite: LpRewriteItem }>(
+    const data = await lpRewriteFetch<{
+      rewrite: LpRewriteItem;
+      previewHtml: string;
+    }>(
       `/api/v1/landing-pages/${encodeURIComponent(landingPageId)}/rewrite`,
       {
         method: "POST",
-        body: JSON.stringify(issues ? { issues } : {}),
+        body: JSON.stringify({
+          ...(issues ? { issues } : {}),
+          ...(requirements ? { requirements } : {}),
+        }),
       }
     );
     return { ok: true, data };
@@ -152,6 +203,74 @@ export async function applyLpRewriteAction(
       body: JSON.stringify({}),
     });
     revalidatePath("/landing-pages/optimization-queue");
+    return { ok: true, data };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+
+/**
+ * Generate a rewrite brief from a template (no landing page exists yet):
+ * renders the template with variables, then produces a requirements-driven
+ * DRAFT. Deploy it later with deployLpRewriteAction.
+ */
+export async function createTemplateRewriteBriefAction(
+  templateId: string,
+  input: {
+    lang?: "zh" | "en";
+    variables?: Record<string, unknown>;
+    requirements: RewriteRequirements;
+  }
+): Promise<LpRewriteActionResult<{ rewrite: LpRewriteItem; previewHtml: string }>> {
+  try {
+    const data = await lpRewriteFetch<{
+      rewrite: LpRewriteItem;
+      previewHtml: string;
+    }>(
+      `/api/v1/landing-pages/templates/${encodeURIComponent(
+        templateId
+      )}/rewrite-brief`,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      }
+    );
+    return { ok: true, data };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+
+/**
+ * Deploy a DRAFT rewrite as a NEW landing page (one-click deploy).
+ * Template-sourced briefs must pass offerId explicitly; page-sourced
+ * drafts default to the source page's offer.
+ */
+export async function deployLpRewriteAction(
+  rewriteId: string,
+  input: { name: string; offerId?: string; url?: string }
+): Promise<
+  LpRewriteActionResult<{
+    rewrite: LpRewriteItem;
+    landingPage: DeployedLandingPage;
+    applied: number;
+    skipped: Array<{ element: string; reason: string }>;
+  }>
+> {
+  try {
+    const data = await lpRewriteFetch<{
+      rewrite: LpRewriteItem;
+      landingPage: DeployedLandingPage;
+      applied: number;
+      skipped: Array<{ element: string; reason: string }>;
+    }>(
+      `/api/v1/landing-pages/rewrites/${encodeURIComponent(rewriteId)}/deploy`,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      }
+    );
+    revalidatePath("/landing-pages/rewrite");
     return { ok: true, data };
   } catch (e) {
     return toActionError(e);

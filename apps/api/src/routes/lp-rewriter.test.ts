@@ -20,6 +20,8 @@ const OTHER_TENANT = "99999999-9999-4999-8999-999999999999";
 const PAGE_ID = "22222222-2222-4222-8222-222222222222";
 const EMPTY_PAGE_ID = "33333333-3333-4333-8333-333333333333";
 const UNKNOWN_ID = "44444444-4444-4444-8444-444444444444";
+const OFFER_ID = "66666666-6666-4666-8666-666666666666";
+const UNKNOWN_OFFER_ID = "77777777-7777-4777-8777-777777777777";
 
 const PAGE_HTML =
   "<html><head><title>示例落地页</title></head>" +
@@ -30,6 +32,7 @@ type Row = Record<string, any>;
 interface Ctx {
   aiSettings: Row[];
   landingPages: Row[];
+  offers: Row[];
   tasks: Row[];
   rewrites: Row[];
   seenChatArgs: any;
@@ -39,6 +42,11 @@ function makeFakePrisma(ctx: Ctx) {
   const matchLP = (r: Row, where: any) =>
     (!where.id || r.id === where.id) &&
     (!where.tenantId || r.tenantId === where.tenantId);
+  const matchOffer = (r: Row, where: any) =>
+    (!where.id || r.id === where.id) &&
+    (!where.tenantId || r.tenantId === where.tenantId) &&
+    (where.deletedAt === undefined ||
+      (r.deletedAt ?? null) === where.deletedAt);
   return {
     aiSetting: {
       findMany: async () => ctx.aiSettings,
@@ -46,11 +54,45 @@ function makeFakePrisma(ctx: Ctx) {
     landingPage: {
       findFirst: async ({ where }: any) =>
         ctx.landingPages.find((r) => matchLP(r, where)) ?? null,
+      findMany: async ({ where }: any = {}) => {
+        let rows = ctx.landingPages.filter((r) => matchLP(r, where ?? {}));
+        // Support the rewritable endpoint's htmlContent not-null/not-empty filter.
+        const and = (where as any)?.AND as Array<any> | undefined;
+        if (Array.isArray(and)) {
+          for (const cond of and) {
+            const hc = cond?.htmlContent;
+            if (hc && typeof hc === "object") {
+              if (hc.not === null)
+                rows = rows.filter((r) => r.htmlContent !== null);
+              if (hc.not === "")
+                rows = rows.filter((r) => r.htmlContent !== "");
+            }
+          }
+        }
+        return rows;
+      },
+      create: async ({ data }: any) => {
+        const row = { ...data };
+        ctx.landingPages.push(row);
+        return row;
+      },
       update: async ({ where, data }: any) => {
         const row = ctx.landingPages.find((r) => r.id === where.id);
         if (!row) throw new Error("not found");
         Object.assign(row, data);
         return row;
+      },
+    },
+    offer: {
+      findFirst: async ({ where }: any) =>
+        ctx.offers.find((r) => matchOffer(r, where)) ?? null,
+      findMany: async ({ where }: any = {}) => {
+        const ids = (where as any)?.id?.in as string[] | undefined;
+        return ctx.offers.filter(
+          (r) =>
+            matchOffer(r, { ...(where ?? {}), id: undefined } as any) &&
+            (!ids || ids.includes(r.id))
+        );
       },
     },
     landingPageOptimizationTask: {
@@ -118,6 +160,7 @@ function seedCtx(configured = true): Ctx {
       {
         id: PAGE_ID,
         tenantId: TENANT,
+        offerId: OFFER_ID,
         name: "示例落地页",
         url: "https://example.com/lp",
         htmlContent: PAGE_HTML,
@@ -125,9 +168,18 @@ function seedCtx(configured = true): Ctx {
       {
         id: EMPTY_PAGE_ID,
         tenantId: TENANT,
+        offerId: OFFER_ID,
         name: "空页面",
         url: "https://example.com/empty",
         htmlContent: null,
+      },
+    ],
+    offers: [
+      {
+        id: OFFER_ID,
+        tenantId: TENANT,
+        name: "测试 Offer",
+        deletedAt: null,
       },
     ],
     tasks: [
@@ -388,5 +440,265 @@ describe("lp-rewriter routes", () => {
       payload: {},
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it("POST /:id/rewrite with requirements uses the brief-driven prompt", async () => {
+    const ctx = seedCtx();
+    const app = await buildApp(ctx);
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/${PAGE_ID}/rewrite`,
+      headers: headers(),
+      payload: {
+        requirements: {
+          targetAudience: "25-35 岁新手妈妈",
+          sellingPoints: ["静音设计", "30 天退款"],
+          tone: "friendly",
+          ctaText: "立即抢购",
+          language: "zh",
+          length: "short",
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.rewrite.status).toBe("DRAFT");
+    expect(body.rewrite.issues).toEqual([]);
+    expect(body.rewrite.rewrittenContent.requirements.targetAudience).toBe(
+      "25-35 岁新手妈妈"
+    );
+    expect(
+      body.rewrite.rewrittenContent.requirements.sellingPoints
+    ).toEqual(["静音设计", "30 天退款"]);
+    expect(body.rewrite.rewrittenContent.source).toEqual({
+      kind: "landingPage",
+      landingPageId: PAGE_ID,
+    });
+    // The brief actually reached the LLM prompt.
+    expect(ctx.seenChatArgs.user).toContain("25-35 岁新手妈妈");
+    expect(ctx.seenChatArgs.user).toContain("静音设计");
+    expect(ctx.seenChatArgs.user).toContain("立即抢购");
+    expect(ctx.seenChatArgs.user).toContain("请用中文输出");
+  });
+
+  it("POST /:id/rewrite rejects malformed requirements with 400", async () => {
+    const ctx = seedCtx();
+    const app = await buildApp(ctx);
+    const badTone = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/${PAGE_ID}/rewrite`,
+      headers: headers(),
+      payload: { requirements: { tone: "nope" } },
+    });
+    expect(badTone.statusCode).toBe(400);
+    const notObject = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/${PAGE_ID}/rewrite`,
+      headers: headers(),
+      payload: { requirements: "just do it" },
+    });
+    expect(notObject.statusCode).toBe(400);
+  });
+
+  it("POST /rewrites/:id/deploy creates a NEW landing page and flips to DEPLOYED", async () => {
+    const ctx = seedCtx();
+    const app = await buildApp(ctx);
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/${PAGE_ID}/rewrite`,
+      headers: headers(),
+      payload: { requirements: { targetAudience: "test", language: "zh" } },
+    });
+    const rewriteId = created.json().rewrite.id;
+
+    const deployed = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/rewrites/${rewriteId}/deploy`,
+      headers: headers(),
+      payload: { name: "改写部署页" },
+    });
+    expect(deployed.statusCode).toBe(200);
+    const body = deployed.json();
+    expect(body.rewrite.status).toBe("DEPLOYED");
+    expect(body.applied).toBe(1);
+    expect(body.landingPage.name).toBe("改写部署页");
+    expect(body.landingPage.offerId).toBe(OFFER_ID);
+    expect(body.landingPage.id).not.toBe(PAGE_ID);
+    expect(body.landingPage.status).toBe("ACTIVE");
+    // The deployed page carries the rewritten copy...
+    const newPage = ctx.landingPages.find((r) => r.id === body.landingPage.id)!;
+    expect(newPage.htmlContent).toContain("立即免费试用");
+    // ...while the source page is untouched.
+    const source = ctx.landingPages.find((r) => r.id === PAGE_ID)!;
+    expect(source.htmlContent).toContain("了解更多");
+    expect(source.htmlContent).not.toContain("立即免费试用");
+    // Deploy metadata is recorded on the rewrite.
+    expect(
+      body.rewrite.rewrittenContent.deployedLandingPageId
+    ).toBe(body.landingPage.id);
+  });
+
+  it("POST /rewrites/:id/deploy validates input and isolates tenants", async () => {
+    const ctx = seedCtx();
+    const app = await buildApp(ctx);
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/${PAGE_ID}/rewrite`,
+      headers: headers(),
+      payload: {},
+    });
+    const rewriteId = created.json().rewrite.id;
+
+    const noName = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/rewrites/${rewriteId}/deploy`,
+      headers: headers(),
+      payload: {},
+    });
+    expect(noName.statusCode).toBe(400);
+
+    const badOffer = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/rewrites/${rewriteId}/deploy`,
+      headers: headers(),
+      payload: { name: "x", offerId: "not-a-uuid" },
+    });
+    expect(badOffer.statusCode).toBe(400);
+
+    const unknownOffer = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/rewrites/${rewriteId}/deploy`,
+      headers: headers(),
+      payload: { name: "x", offerId: UNKNOWN_OFFER_ID },
+    });
+    expect(unknownOffer.statusCode).toBe(404);
+
+    const foreign = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/rewrites/${rewriteId}/deploy`,
+      headers: headers(OTHER_TENANT),
+      payload: { name: "x" },
+    });
+    expect(foreign.statusCode).toBe(404);
+
+    const malformed = await app.inject({
+      method: "POST",
+      url: "/api/v1/landing-pages/rewrites/nope/deploy",
+      headers: headers(),
+      payload: { name: "x" },
+    });
+    expect(malformed.statusCode).toBe(404);
+
+    // Explicit offerId + url are honored.
+    const ok = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/rewrites/${rewriteId}/deploy`,
+      headers: headers(),
+      payload: {
+        name: "部署页",
+        offerId: OFFER_ID,
+        url: "https://example.com/deployed",
+      },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().landingPage.url).toBe("https://example.com/deployed");
+    expect(ok.json().landingPage.domain).toBe("example.com");
+
+    // A second deploy is rejected.
+    const second = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/rewrites/${rewriteId}/deploy`,
+      headers: headers(),
+      payload: { name: "again" },
+    });
+    expect(second.statusCode).toBe(409);
+  });
+
+  it("GET /api/v1/landing-pages/rewritable lists only pages with HTML", async () => {
+    const ctx = seedCtx();
+    const app = await buildApp(ctx);
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/v1/landing-pages/rewritable",
+      headers: headers(),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // EMPTY_PAGE_ID has no HTML and must be excluded.
+    expect(body.total).toBe(1);
+    expect(body.items[0].id).toBe(PAGE_ID);
+    expect(body.items[0].name).toBe("示例落地页");
+    expect(body.items[0].offerId).toBe(OFFER_ID);
+    expect(body.items[0].offerName).toBe("测试 Offer");
+    expect(body.items[0]).not.toHaveProperty("htmlContent");
+  });
+
+  it("GET /api/v1/landing-pages/rewritable is tenant-isolated", async () => {
+    const ctx = seedCtx();
+    const app = await buildApp(ctx);
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/v1/landing-pages/rewritable",
+      headers: headers(OTHER_TENANT),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().total).toBe(0);
+  });
+
+  it("POST /rewrites/:id/deploy supports template-sourced briefs (no source page)", async () => {
+    const ctx = seedCtx();
+    const app = await buildApp(ctx);
+    const templateRewrite = {
+      id: "88888888-8888-4888-8888-888888888888",
+      tenantId: TENANT,
+      landingPageId: null,
+      originalScore: 70,
+      issues: [],
+      rewrittenContent: {
+        rewrites: [
+          {
+            element: "H1",
+            location: "首屏",
+            before: "TestProduct",
+            after: "TestProduct Pro",
+            reason: "测试",
+          },
+        ],
+        aiEstimatedNewScore: 88,
+        appliedCount: 1,
+        skipped: [],
+        source: { kind: "template", templateId: "builtin-coupon", lang: "zh" },
+        baseHtml:
+          "<html><body><h1>TestProduct</h1><p>desc</p></body></html>",
+      },
+      newScore: 80,
+      status: "DRAFT",
+      createdAt: new Date(),
+    };
+    ctx.rewrites.push(templateRewrite);
+
+    // Template-sourced briefs must name an offer explicitly.
+    const noOffer = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/rewrites/${templateRewrite.id}/deploy`,
+      headers: headers(),
+      payload: { name: "模板部署页" },
+    });
+    expect(noOffer.statusCode).toBe(400);
+
+    const deployed = await app.inject({
+      method: "POST",
+      url: `/api/v1/landing-pages/rewrites/${templateRewrite.id}/deploy`,
+      headers: headers(),
+      payload: { name: "模板部署页", offerId: OFFER_ID },
+    });
+    expect(deployed.statusCode).toBe(200);
+    const body = deployed.json();
+    expect(body.rewrite.status).toBe("DEPLOYED");
+    expect(body.landingPage.offerId).toBe(OFFER_ID);
+    const newPage = ctx.landingPages.find(
+      (r) => r.id === body.landingPage.id
+    )!;
+    expect(newPage.htmlContent).toContain("TestProduct Pro");
   });
 });
