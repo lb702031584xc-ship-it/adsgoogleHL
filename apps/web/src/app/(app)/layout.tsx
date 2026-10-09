@@ -39,90 +39,49 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   const s = t.common.nav.sections;
   const navSections: NavSection[] = isResearcher
-    ? [{ title: s.experiment, items: [researchNavItem] }]
+    ? [{ title: "🧪 Research", items: [researchNavItem] }]
     : [
         {
           title: s.start,
           items: [
-            { href: "/launch", label: t.launch.title },
+            { href: "/launch", label: `① ${t.launch.title}` },
             { href: "/dashboard", label: t.common.nav.dashboard },
           ],
         },
         {
           title: s.affiliate,
           items: [
-            { href: "/networks", label: t.networks.page.title },
-            { href: "/offers", label: t.common.nav.offers },
-            { href: "/offers/import", label: t.ai.intel.nav.import },
-            { href: "/merchants", label: t.ai.intel.nav.merchants },
-            { href: "/amazon/discovery", label: "Amazon 选品" },
+            { href: "/networks", label: "① 连接联盟网络" },
+            { href: "/offers", label: "② Offer 列表" },
+            { href: "/offers/new", label: "③ 新建/导入 Offer" },
+            { href: "/ai/analyze", label: "④ AI 分析" },
+            { href: "/ai/terms", label: "⑤ 条款检查" },
+            { href: "/ai/compliance", label: "⑥ 合规检查" },
+            { href: "/ai/profit", label: "⑦ 盈利测算" },
+            { href: "/landing-pages", label: "⑧ 落地页" },
+            { href: "/ads/auto-create", label: "⑨ 投广告" },
+            { href: "/campaigns", label: "⑩ Campaign 管理" },
+            { href: "/monitoring", label: "⑪ 流量监控" },
+          ],
+        },
+        {
+          title: s.amazon,
+          items: [
+            { href: "/admin/ai-settings", label: "① 配置 PA-API" },
+            { href: "/amazon/discovery", label: "② 选品发现" },
+            { href: "/offers", label: "③ 导入为 Offer（进联盟流程④）" },
           ],
         },
         {
           title: s.cashback,
           items: [
-            { href: "/cashback/offers", label: t.cashback.offers.title },
-            { href: "/cashback/rotations", label: t.cashback.rotations.title },
-            { href: "/cashback/rate-watch", label: t.cashbackRateWatch.page.title },
+            { href: "/cashback/offers", label: "① 添加返利 Offer" },
+            { href: "/cashback/rotations", label: "② 配置轮换" },
+            { href: "/cashback/rate-watch", label: "③ 返利监控" },
             { href: "/cashback/terms-watch", label: t.cashbackTermsWatch.termsWatch.title },
             { href: "/cashback/redirect-check", label: t.cashbackRedirectCheck.page.title },
             { href: "/cashback/rate-compare", label: t.cashbackRateCompare.rateCompare.title },
-          ],
-        },
-        {
-          title: s.ai,
-          items: [
-            { href: "/ai/analyze", label: t.ai.nav.analyze },
-            { href: "/ai/terms", label: t.ai.nav.terms },
-            { href: "/ai/compliance", label: t.ai.nav.compliance },
-            { href: "/ai/brand-check", label: t.ai.nav.brandCheck },
-            { href: "/ai/profit", label: t.ai.nav.profit },
-            { href: "/ai/decision", label: t.ai.nav.decision },
-            { href: "/ai/strategy", label: t.strategy.nav.strategy },
-          ],
-        },
-        {
-          title: s.lander,
-          items: [
-            { href: "/landing-pages", label: t.common.nav.landingPages },
-            { href: "/landing-pages/analyze", label: t.ai.nav.lander },
-            { href: "/landing-pages/templates", label: t.ai.nav.templates },
-            { href: "/landing-pages/watch", label: t.ai.nav.competitorWatch },
-            {
-              href: "/landing-pages/optimization-queue",
-              label: t.lpOptimization.title,
-            },
-          ],
-        },
-        {
-          title: s.ads,
-          items: [
-            { href: "/ads/auto-create", label: t.adsAuto.title },
-            { href: "/ads/rotation-script", label: "直链轮换 Script" },
-            { href: "/google-accounts", label: t.common.nav.googleAccounts },
-            { href: "/campaigns", label: t.common.nav.campaigns },
-            { href: "/ad-groups", label: t.common.nav.adGroups },
-            { href: "/ads", label: t.common.nav.ads },
-          ],
-        },
-        {
-          title: s.monitor,
-          items: [
-            { href: "/monitoring", label: t.ai.nav.monitoring },
-            { href: "/link-health", label: t.deadLink.page.title },
-            { href: "/search-terms", label: t.searchTerms.panel.title },
-            { href: "/payout-watch", label: t.payoutWatch.payoutWatch.title },
-            { href: "/budget-rules", label: t.budgetRules.budgetRules.title },
-          ],
-        },
-        {
-          title: s.experiment,
-          items: [
-            {
-              href: "/experiments",
-              label: (lang === "en" ? experimentEn : experimentZh).nav.experiments,
-            },
-            researchNavItem,
+            { href: "/ads/rotation-script", label: "④ 直链轮换 Script" },
           ],
         },
         {
@@ -132,13 +91,13 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             { href: "/tracking-links", label: t.common.nav.trackingLinks },
             { href: "/clicks", label: t.common.nav.clicks },
             { href: "/conversions", label: t.common.nav.conversions },
-            { href: "/orders", label: t.common.nav.orders },
-            { href: "/url-versions", label: t.common.nav.urlVersions },
-            { href: "/traffic/provenance", label: t.ai.intel.traffic.nav.provenance },
+            { href: "/ai/decision", label: t.ai.nav.decision },
+            { href: "/ai/strategy", label: t.strategy.nav.strategy },
             {
-              href: "/traffic/audit-report",
-              label: t.ai.intel.traffic.nav.auditReport,
+              href: "/experiments",
+              label: (lang === "en" ? experimentEn : experimentZh).nav.experiments,
             },
+            researchNavItem,
           ],
         },
         {
@@ -150,7 +109,6 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             ...(isAdmin
               ? [
                   { href: "/admin/users", label: t.auth.nav.users },
-                  { href: "/admin/ai-settings", label: t.ai.admin.nav.aiSettings },
                 ]
               : []),
           ],

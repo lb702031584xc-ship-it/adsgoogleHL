@@ -1,21 +1,13 @@
-import { EntityPageHeader } from "@/components/entities/ui";
-import { OfferForm } from "@/components/entities/offer-form";
-import { getLang } from "@/i18n/lang";
-import { getDictionary } from "@/i18n/dictionaries";
+import { Suspense } from "react";
+import { NewOfferTabs } from "@/components/offers/new-offer-tabs";
 
 export const dynamic = "force-dynamic";
 
+/** Unified offer creation: manual form + bulk import tabs. */
 export default async function NewOfferPage() {
-  const lang = await getLang();
-  const t = getDictionary(lang);
-
   return (
-    <div className="mx-auto max-w-2xl">
-      <EntityPageHeader
-        title={t.entities.offers.new.title}
-        description={t.entities.offers.new.description}
-      />
-      <OfferForm />
-    </div>
+    <Suspense>
+      <NewOfferTabs />
+    </Suspense>
   );
 }

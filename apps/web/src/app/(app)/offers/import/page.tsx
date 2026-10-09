@@ -1,8 +1,6 @@
-import { OfferImportClient } from "@/components/offers/import-client";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-/** Bulk offer import (CSV / JSON / URLs). */
+/** Merged into /offers/new (tab). Keep the old URL working. */
 export default async function OfferImportPage() {
-  return <OfferImportClient />;
+  redirect("/offers/new?tab=import");
 }
