@@ -336,21 +336,8 @@ export interface AmazonDiscoveryCriteria {
   maxResults?: number;
 }
 
-export interface AmazonScoredProduct {
-  asin: string;
-  title: string;
-  detailPageUrl: string;
-  price: number | null;
-  currency: string | null;
-  rating: number | null;
-  reviewCount: number | null;
-  imageUrl: string | null;
-  isPrime: boolean;
-  availability: string | null;
-  score: number;
-  estimatedCommission: number | null;
-  reasons: string[];
-}
+import type { AmazonScoredProduct } from "./amazon-types";
+export type { AmazonScoredProduct } from "./amazon-types";
 
 export async function runAmazonDiscovery(
   criteria: AmazonDiscoveryCriteria

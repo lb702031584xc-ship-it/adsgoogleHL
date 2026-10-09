@@ -7,7 +7,7 @@ import {
   runAmazonDiscoveryAction,
   importAmazonProductsAction,
 } from "@/lib/api/amazon-actions";
-import type { AmazonScoredProduct } from "@/lib/api/ai";
+import type { AmazonScoredProduct } from "@/lib/api/amazon-types";
 
 export function AmazonDiscoveryClient({ dict }: { dict: AmazonDiscoveryDict }) {
   const d = dict;

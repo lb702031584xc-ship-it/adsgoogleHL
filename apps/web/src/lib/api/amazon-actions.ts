@@ -8,8 +8,8 @@ import {
   runAmazonDiscovery,
   importAmazonProducts,
   type AmazonDiscoveryCriteria,
-  type AmazonScoredProduct,
 } from "./ai";
+import type { AmazonScoredProduct } from "./amazon-types";
 
 export type AmazonActionResult<T> =
   | { ok: true; data: T }
