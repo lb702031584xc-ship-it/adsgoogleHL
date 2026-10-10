@@ -7,14 +7,18 @@ import {
   parseAmazonProductUrlAction,
   getKeepaStatusAction,
   validateKeepaAction,
+  getKeepaVisionStatusAction,
+  judgeKeepaVisionAction,
+  judgeKeepaManualAction,
 } from "@/lib/api/amazon-actions";
-import type { KeepaValidateItem } from "@/lib/api/ai";
+import type { KeepaValidateItem, KeepaManualInput, KeepaManualJudgment } from "@/lib/api/ai";
 
 const LS_CHECKS = "adlinklab-manual-guide-checks";
 const LS_CATS = "adlinklab-manual-guide-cats";
 const LS_CANDIDATES = "adlinklab-manual-guide-candidates";
 const LS_COUNTRY = "adlinklab-manual-guide-country";
 const LS_KEEPA_CHECKED = "adlinklab-manual-guide-keepa-checked";
+const LS_KEEPA_VERDICTS = "adlinklab-manual-guide-keepa-verdicts";
 
 // 扫榜三榜单路径（与 scan 步骤 checklist 前三项一一对应）
 const SCAN_PATHS = ["/Best-Sellers/zgbs", "/gp/movers-and-shakers", "/gp/new-releases"];
@@ -277,6 +281,326 @@ function KeepaAutoScreen({
   );
 }
 
+/** verdict 本地存储形状（随 keepaChecked 一起持久化）。 */
+export interface VisionVerdictStored {
+  verdict: "pass" | "kill" | "unknown";
+  reasons: string[];
+}
+
+/**
+ * Day5 手动逐个核查 — "AI 看图"上传弹窗。
+ * 上传 Keepa 价格历史 / Sales Rank 截图，调 vision LLM 看图判断，
+ * 结果写回候选行的 verdict badge。
+ */
+// 手动输入模式字段配置（价格 / 排名 / 评论三组）
+const MANUAL_GROUPS: Array<{
+  getTitle: (d: AmazonManualGuideDict) => string;
+  fields: Array<{
+    key: string;
+    getLabel: (d: AmazonManualGuideDict) => string;
+    optional?: boolean;
+  }>;
+}> = [
+  {
+    getTitle: (d) => d.manualPriceGroup,
+    fields: [
+      { key: "amazonPriceNow", getLabel: (d) => d.mAmazonPriceNow },
+      { key: "amazonPrice30dAgo", getLabel: (d) => d.mAmazonPrice30dAgo },
+      { key: "priceLow90d", getLabel: (d) => d.mPriceLow90d },
+      { key: "priceHigh90d", getLabel: (d) => d.mPriceHigh90d },
+    ],
+  },
+  {
+    getTitle: (d) => d.manualRankGroup,
+    fields: [
+      { key: "rankNow", getLabel: (d) => d.mRankNow },
+      { key: "rankBest90d", getLabel: (d) => d.mRankBest90d },
+      { key: "rankWorst90d", getLabel: (d) => d.mRankWorst90d },
+    ],
+  },
+  {
+    getTitle: (d) => d.manualReviewGroup,
+    fields: [
+      { key: "reviewsNow", getLabel: (d) => d.mReviewsNow },
+      { key: "reviews90dAgo", getLabel: (d) => d.mReviews90dAgo, optional: true },
+    ],
+  },
+];
+
+function VisionModal({
+  d,
+  target,
+  onClose,
+  onDone,
+}: {
+  d: AmazonManualGuideDict;
+  target: { id: string; name: string; asin: string };
+  onClose: () => void;
+  onDone: (id: string, v: VisionVerdictStored) => void;
+}) {
+  const [mode, setMode] = useState<"vision" | "manual">("vision");
+  const [priceFile, setPriceFile] = useState<File | null>(null);
+  const [rankFile, setRankFile] = useState<File | null>(null);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState("");
+  // 手动输入模式状态
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const [mRunning, setMRunning] = useState(false);
+  const [mError, setMError] = useState("");
+  const [mResult, setMResult] = useState<KeepaManualJudgment | null>(null);
+
+  const pickFile = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    set: (f: File | null) => void
+  ) => {
+    const f = e.target.files?.[0] ?? null;
+    setError("");
+    if (!f) {
+      set(null);
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) {
+      setError(`${d.visionNeedOne}`);
+      e.target.value = "";
+      return;
+    }
+    set(f);
+  };
+
+  const submit = async () => {
+    if (!priceFile && !rankFile) {
+      setError(d.visionNeedOne);
+      return;
+    }
+    setRunning(true);
+    setError("");
+    try {
+      const fd = new FormData();
+      if (priceFile) fd.append("price", priceFile);
+      if (rankFile) fd.append("rank", rankFile);
+      if (target.asin) fd.append("asin", target.asin);
+      const res = await judgeKeepaVisionAction(fd);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      onDone(target.id, { verdict: res.data.verdict, reasons: res.data.reasons });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const submitManual = async () => {
+    const nums: Record<string, number> = {};
+    for (const g of MANUAL_GROUPS) {
+      for (const f of g.fields) {
+        const raw = (vals[f.key] ?? "").trim();
+        if (raw === "") {
+          if (f.optional) continue;
+          setMError(d.manualInvalidNumber);
+          return;
+        }
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n < 0) {
+          setMError(d.manualInvalidNumber);
+          return;
+        }
+        nums[f.key] = n;
+      }
+    }
+    if (nums.priceLow90d > nums.priceHigh90d) {
+      setMError(d.manualInvalidNumber);
+      return;
+    }
+    setMRunning(true);
+    setMError("");
+    try {
+      const input: KeepaManualInput = {
+        amazonPriceNow: nums.amazonPriceNow,
+        amazonPrice30dAgo: nums.amazonPrice30dAgo,
+        priceLow90d: nums.priceLow90d,
+        priceHigh90d: nums.priceHigh90d,
+        rankNow: nums.rankNow,
+        rankBest90d: nums.rankBest90d,
+        rankWorst90d: nums.rankWorst90d,
+        reviewsNow: nums.reviewsNow,
+        reviews90dAgo: nums.reviews90dAgo ?? null,
+      };
+      const res = await judgeKeepaManualAction(input);
+      if (!res.ok) {
+        setMError(res.error);
+        return;
+      }
+      setMResult(res.data);
+      onDone(target.id, {
+        verdict: res.data.verdict,
+        reasons: res.data.reasons.map((r) => r.detail),
+      });
+    } finally {
+      setMRunning(false);
+    }
+  };
+
+  const mBadgeLabel =
+    mResult?.verdict === "pass"
+      ? d.keepaVerdictPass
+      : mResult?.verdict === "kill"
+        ? d.keepaVerdictKill
+        : d.keepaVerdictUnknown;
+  const mBadgeCls =
+    mResult?.verdict === "pass"
+      ? "bg-emerald-100 text-emerald-800"
+      : mResult?.verdict === "kill"
+        ? "bg-red-100 text-red-800"
+        : "bg-ink/10 text-ink/60";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-base font-semibold text-ink">{d.visionModalTitle}</p>
+        <p className="mt-1 truncate text-xs text-ink/60">
+          {target.name}
+          {target.asin && <span className="ml-2">{target.asin}</span>}
+        </p>
+        {/* 模式切换 */}
+        <div className="mt-3 flex gap-1 rounded-lg bg-ink/5 p-1">
+          {(
+            [
+              { key: "vision", label: d.visionTabScreenshot },
+              { key: "manual", label: d.visionTabManual },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setMode(t.key)}
+              className={`flex-1 rounded-md px-2 py-1.5 text-sm transition ${
+                mode === t.key
+                  ? "bg-white font-medium text-ink shadow-sm"
+                  : "text-ink/55 hover:text-ink/80"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {mode === "vision" ? (
+          <>
+            <div className="mt-4 space-y-4">
+              <div>
+                <p className="text-xs leading-5 text-ink/50">{d.visionPriceLabel}</p>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => pickFile(e, setPriceFile)}
+                  className="mt-1 block w-full text-sm text-ink/80 file:mr-3 file:rounded-lg file:border file:border-ink/15 file:bg-ink/[0.03] file:px-3 file:py-1.5 file:text-sm"
+                />
+                {priceFile && <p className="mt-1 text-xs text-ink/50">{priceFile.name}</p>}
+              </div>
+              <div>
+                <p className="text-xs leading-5 text-ink/50">{d.visionRankLabel}</p>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => pickFile(e, setRankFile)}
+                  className="mt-1 block w-full text-sm text-ink/80 file:mr-3 file:rounded-lg file:border file:border-ink/15 file:bg-ink/[0.03] file:px-3 file:py-1.5 file:text-sm"
+                />
+                {rankFile && <p className="mt-1 text-xs text-ink/50">{rankFile.name}</p>}
+              </div>
+            </div>
+            {error && <p className="mt-3 text-xs leading-5 text-red-600">{error}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-ink/15 px-3 py-1.5 text-sm text-ink/80 transition hover:bg-ink/5"
+              >
+                {d.visionClose}
+              </button>
+              <button
+                type="button"
+                onClick={submit}
+                disabled={running}
+                className="rounded-lg bg-ink px-4 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+              >
+                {running ? d.visionRunning : d.visionSubmit}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mt-4 space-y-4">
+              {MANUAL_GROUPS.map((g) => (
+                <div key={g.getTitle(d)}>
+                  <p className="text-xs font-medium text-ink/70">{g.getTitle(d)}</p>
+                  <div className="mt-1.5 grid grid-cols-2 gap-2">
+                    {g.fields.map((f) => (
+                      <label key={f.key} className="block">
+                        <span className="text-xs text-ink/55">{f.getLabel(d)}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          inputMode="decimal"
+                          value={vals[f.key] ?? ""}
+                          onChange={(e) => {
+                            setVals((prev) => ({ ...prev, [f.key]: e.target.value }));
+                            setMError("");
+                          }}
+                          placeholder="0"
+                          className="mt-0.5 w-full rounded-lg border border-ink/15 px-2 py-1.5 text-sm text-ink focus:border-ink/40 focus:outline-none"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {mResult && (
+              <div className="mt-4 rounded-lg border border-ink/10 bg-ink/[0.02] p-3">
+                <span
+                  className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${mBadgeCls}`}
+                >
+                  {mBadgeLabel}
+                </span>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-ink/75">
+                  {mResult.reasons.map((r, i) => (
+                    <li key={i}>{r.detail}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {mError && <p className="mt-3 text-xs leading-5 text-red-600">{mError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-ink/15 px-3 py-1.5 text-sm text-ink/80 transition hover:bg-ink/5"
+              >
+                {d.visionClose}
+              </button>
+              <button
+                type="button"
+                onClick={submitManual}
+                disabled={mRunning}
+                className="rounded-lg bg-ink px-4 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+              >
+                {mRunning ? d.visionRunning : d.visionSubmit}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StepCard({
   step,
   d,
@@ -412,6 +736,13 @@ export function AmazonManualGuideClient({
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState("");
   const [keepaChecked, setKeepaChecked] = useState<string[]>([]);
+  const [verdicts, setVerdicts] = useState<Record<string, VisionVerdictStored>>({});
+  const [llmOk, setLlmOk] = useState<boolean | null>(null);
+  const [visionTarget, setVisionTarget] = useState<{
+    id: string;
+    name: string;
+    asin: string;
+  } | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({ categories: true });
   const [ready, setReady] = useState(false);
 
@@ -421,7 +752,19 @@ export function AmazonManualGuideClient({
     setCandidates(loadJson<CandidateRow[]>(LS_CANDIDATES, []));
     setCountry(loadJson(LS_COUNTRY, "US"));
     setKeepaChecked(loadJson<string[]>(LS_KEEPA_CHECKED, []));
+    setVerdicts(loadJson<Record<string, VisionVerdictStored>>(LS_KEEPA_VERDICTS, {}));
     setReady(true);
+  }, []);
+
+  // AI 看图按钮可用性：LLM 是否已配置
+  useEffect(() => {
+    let alive = true;
+    getKeepaVisionStatusAction().then((res) => {
+      if (alive) setLlmOk(res.ok ? res.data.llmConfigured : false);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -439,6 +782,9 @@ export function AmazonManualGuideClient({
   useEffect(() => {
     if (ready) localStorage.setItem(LS_KEEPA_CHECKED, JSON.stringify(keepaChecked));
   }, [keepaChecked, ready]);
+  useEffect(() => {
+    if (ready) localStorage.setItem(LS_KEEPA_VERDICTS, JSON.stringify(verdicts));
+  }, [verdicts, ready]);
 
   const dpUrl = (asin: string) => {
     const clean = asin.trim().toUpperCase();
@@ -758,41 +1104,91 @@ export function AmazonManualGuideClient({
                       .replace("{done}", String(keepaChecked.filter((id) => candidates.some((r) => r.id === id)).length))
                       .replace("{total}", String(candidates.length))}
                   </p>
+                  {llmOk === false && (
+                    <p className="mt-1 text-xs leading-5 text-amber-700">
+                      ⚠ {d.visionNoLlm}：{d.visionNoLlmHint}
+                    </p>
+                  )}
                   <ul className="mt-2 space-y-1.5">
                     {candidates.map((r, i) => {
                       const link = dpUrl(r.asin);
                       const checked = keepaChecked.includes(r.id);
+                      const v = verdicts[r.id];
+                      const isKill = v?.verdict === "kill";
+                      const badgeCls =
+                        !v || v.verdict === "unknown"
+                          ? "bg-ink/10 text-ink/60"
+                          : v.verdict === "pass"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-red-100 text-red-800";
+                      const badgeLabel =
+                        !v || v.verdict === "unknown"
+                          ? d.keepaVerdictUnknown
+                          : v.verdict === "pass"
+                            ? d.keepaVerdictPass
+                            : d.keepaVerdictKill;
                       return (
                         <li
                           key={r.id}
-                          className="flex items-center gap-2.5 rounded-lg border border-ink/10 px-3 py-2 text-sm"
+                          className={`rounded-lg border px-3 py-2 text-sm ${
+                            isKill ? "border-red-300 bg-red-50/60" : "border-ink/10"
+                          }`}
                         >
-                          <span className="w-6 shrink-0 text-xs text-ink/50">{i + 1}</span>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) =>
-                              setKeepaChecked((prev) =>
-                                e.target.checked
-                                  ? [...prev, r.id]
-                                  : prev.filter((id) => id !== r.id)
-                              )
-                            }
-                            className="h-4 w-4 shrink-0 accent-emerald-600"
-                          />
-                          <span className={`flex-1 truncate ${checked ? "text-ink/45 line-through" : "text-ink/85"}`}>
-                            {r.name || d.unnamedProduct}
-                            {r.asin && <span className="ml-2 text-xs text-ink/45">{r.asin.trim().toUpperCase()}</span>}
-                          </span>
-                          {link && (
-                            <a
-                              href={link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="shrink-0 rounded-lg border border-ink/15 px-2 py-1 text-xs text-sky-700 transition hover:bg-ink/5"
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-6 shrink-0 text-xs text-ink/50">{i + 1}</span>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) =>
+                                setKeepaChecked((prev) =>
+                                  e.target.checked
+                                    ? [...prev, r.id]
+                                    : prev.filter((id) => id !== r.id)
+                                )
+                              }
+                              className="h-4 w-4 shrink-0 accent-emerald-600"
+                            />
+                            <span className={`min-w-0 flex-1 truncate ${checked ? "text-ink/45 line-through" : "text-ink/85"}`}>
+                              {r.name || d.unnamedProduct}
+                              {r.asin && <span className="ml-2 text-xs text-ink/45">{r.asin.trim().toUpperCase()}</span>}
+                            </span>
+                            {v && (
+                              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${badgeCls}`}>
+                                {badgeLabel}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setVisionTarget({
+                                  id: r.id,
+                                  name: r.name || d.unnamedProduct,
+                                  asin: r.asin.trim().toUpperCase(),
+                                })
+                              }
+                              disabled={llmOk !== true}
+                              title={llmOk === false ? d.visionNoLlmHint : undefined}
+                              className="shrink-0 rounded-lg border border-ink/15 px-2 py-1 text-xs text-ink/80 transition hover:bg-ink/5 disabled:opacity-40"
                             >
-                              {d.viewProduct} ↗
-                            </a>
+                              {d.visionButton}
+                            </button>
+                            {link && (
+                              <a
+                                href={link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="shrink-0 rounded-lg border border-ink/15 px-2 py-1 text-xs text-sky-700 transition hover:bg-ink/5"
+                              >
+                                {d.viewProduct} ↗
+                              </a>
+                            )}
+                          </div>
+                          {v && v.reasons.length > 0 && (
+                            <ul className="mt-1.5 space-y-0.5 pl-14 text-xs leading-5 text-ink/65">
+                              {v.reasons.map((reason, ri) => (
+                                <li key={ri}>· {reason}</li>
+                              ))}
+                            </ul>
                           )}
                         </li>
                       );
@@ -835,6 +1231,17 @@ export function AmazonManualGuideClient({
           )}
         </StepCard>
       ))}
+      {visionTarget && (
+        <VisionModal
+          d={d}
+          target={visionTarget}
+          onClose={() => setVisionTarget(null)}
+          onDone={(id, v) => {
+            setVerdicts((prev) => ({ ...prev, [id]: v }));
+            setVisionTarget(null);
+          }}
+        />
+      )}
     </div>
   );
 }

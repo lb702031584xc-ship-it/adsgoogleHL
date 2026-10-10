@@ -557,6 +557,7 @@ describe("ai routes", () => {
         configured: true,
         hasTrafficSimilarweb: false,
         hasTrafficDataforseo: false,
+        hasKeepa: false,
       });
 
     const get = await app.inject({
@@ -624,6 +625,7 @@ describe("ai routes", () => {
         configured: true,
         hasTrafficSimilarweb: false,
         hasTrafficDataforseo: false,
+        hasKeepa: false,
       });
     const get = await app.inject({
       method: "GET",

@@ -207,7 +207,7 @@ describe("Phase 9.1 migration command availability", () => {
     expect(compose).not.toMatch(/prisma db push/);
   });
 
-  it("15. migration count is 24 (Phase 10 auth + Phase 11 AI + P1 traffic monitor + Phase 1 offer intel + Phase 2 traffic intel + Phase 3 optimization + Phase 4 research lab + Lander Intel + automation + automation-pack + launch wizard + lp rewriter + weekly report + network api + cashback automation pack + rotation interval + amazon discovery + lp rewrite deploy migrations; no other new schema migration)", () => {
+  it("15. migration count is 33 (Phase 10 auth + Phase 11 AI + P1 traffic monitor + Phase 1 offer intel + Phase 2 traffic intel + Phase 3 optimization + Phase 4 research lab + Lander Intel + automation + automation-pack + launch wizard + lp rewriter + weekly report + network api + cashback automation pack + rotation interval + amazon discovery + lp rewrite deploy migrations + traffic gate/offer-metrics/pipeline/denylist/combo/asin-watch/onboard/coach/manual-spend selection-system migrations; no other new schema migration)", () => {
     const migrationsDir = join(
       REPO_ROOT,
       "packages/database/prisma/migrations"
@@ -216,7 +216,7 @@ describe("Phase 9.1 migration command availability", () => {
     const names = readdirSync(migrationsDir).filter((n) =>
       existsSync(join(migrationsDir, n, "migration.sql"))
     );
-    expect(names.length).toBe(24);
+    expect(names.length).toBe(33);
     expect(names).toContain("20261003130000_auth_users_sessions");
     expect(names).toContain("20261003140000_ai_offer_analysis");
     expect(names).toContain("20261004040000_p1_monitoring");
@@ -233,6 +233,15 @@ describe("Phase 9.1 migration command availability", () => {
     expect(names).toContain("20261008020000_rotation_interval");
     expect(names).toContain("20261008030000_amazon_discovery");
     expect(names).toContain("20261009040000_lp_rewrite_nullable_page");
+    expect(names).toContain("20261010010000_offer_metrics");
+    expect(names).toContain("20261010020000_product_pipeline_runs");
+    expect(names).toContain("20261010030000_killswitch_test_stoploss");
+    expect(names).toContain("20261010040000_denylist_entries");
+    expect(names).toContain("20261010050000_combo_test_runs");
+    expect(names).toContain("20261010060000_asin_watch");
+    expect(names).toContain("20261010070000_onboard_tasks");
+    expect(names).toContain("20261010080000_coach_settings");
+    expect(names).toContain("20261010090000_manual_spend");
   });
 });
 

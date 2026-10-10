@@ -421,6 +421,58 @@ export async function validateKeepa(
   });
 }
 
+/** Keepa 截图 AI 看图判断结果（vision LLM）。 */
+export interface KeepaVisionJudgment {
+  asin: string | null;
+  verdict: "pass" | "kill" | "unknown";
+  reasons: string[];
+  metrics: {
+    priceDrop30dPct: number | null;
+    rankStable: boolean | null;
+    confidence: "high" | "medium" | "low";
+  };
+}
+
+/** Vision LLM 是否已配置（AI 设置）。 */
+export async function getKeepaVisionStatus(): Promise<{ llmConfigured: boolean }> {
+  return aiFetch<{ llmConfigured: boolean }>("/api/v1/keepa/vision-status");
+}
+
+/** Keepa 手动输入数字判定的输入（"AI 看图"弹窗手动模式）。 */
+export interface KeepaManualInput {
+  amazonPriceNow: number;
+  amazonPrice30dAgo: number;
+  priceLow90d: number;
+  priceHigh90d: number;
+  rankNow: number;
+  rankBest90d: number;
+  rankWorst90d: number;
+  reviewsNow: number;
+  reviews90dAgo?: number | null;
+}
+
+/** Keepa 手动输入数字判定结果（纯计算，与 evaluateKeepa 同阈值）。 */
+export interface KeepaManualJudgment {
+  verdict: "pass" | "kill" | "unknown";
+  reasons: Array<{ code: string; detail: string }>;
+  metrics: {
+    priceDrop30dPct: number | null;
+    priceVolatility90dPct: number | null;
+    rankRatio90d: number | null;
+    reviewGrowth90d: number | null;
+  };
+}
+
+/** Keepa 手动输入数字判定：纯计算，无外部调用。 */
+export async function judgeKeepaManual(
+  input: KeepaManualInput
+): Promise<KeepaManualJudgment> {
+  return aiFetch<KeepaManualJudgment>("/api/v1/keepa/manual-judge", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 /** 流量门阈值：官网月访问量 / 品牌热度（0-100 相对值）/ 关键词热度（0-100 相对值） */
 export interface TrafficThresholds {
   officialSiteMonthlyVisits: number;

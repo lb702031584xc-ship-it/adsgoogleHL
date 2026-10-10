@@ -20,17 +20,28 @@ export interface ChatJsonArgs {
   user: string;
 }
 
+/**
+ * Vision variant: user message carries text + image data URLs
+ * (OpenAI multimodal format). Callers must keep each image ≤4MB
+ * (jpeg/png/webp) — large payloads get rejected by most providers.
+ */
+export interface ChatJsonVisionArgs extends ChatJsonArgs {
+  images: string[];
+}
+
 const REQUEST_TIMEOUT_MS = 60_000;
 
 /**
  * Call chatJson and validate the result, retrying ONCE with targeted feedback
  * when validation fails. Smaller models often need the nudge; the retry tells
  * them exactly which field was wrong.
+ *
+ * Generic over the args type so vision callers can pass their own impl.
  */
-export async function chatJsonValidated<T>(
-  args: ChatJsonArgs,
+export async function chatJsonValidated<T, A extends ChatJsonArgs = ChatJsonArgs>(
+  args: A,
   validate: (obj: unknown) => T,
-  impl: typeof chatJson = chatJson,
+  impl: (args: A) => Promise<unknown> = chatJson,
 ): Promise<T> {
   const raw = await impl(args);
   try {
@@ -47,12 +58,25 @@ export async function chatJsonValidated<T>(
   }
 }
 
+/** Read a short snippet of an error response body (for diagnosing provider errors). */
+async function errorSnippet(res: Response): Promise<string> {
+  try {
+    const t = (await res.text()).trim().slice(0, 400).replace(/\s+/g, " ");
+    return t ? `: ${t}` : "";
+  } catch {
+    return "";
+  }
+}
+
 /**
- * POST {baseUrl}/chat/completions with response_format json_object.
+ * Shared POST {baseUrl}/chat/completions with response_format json_object.
  * Returns the parsed JSON body. Throws AiError (safe messages only) on
  * network failure, non-2xx status, or invalid JSON.
  */
-export async function chatJson(args: ChatJsonArgs): Promise<unknown> {
+async function postChatCompletions(
+  args: ChatJsonArgs,
+  userContent: unknown,
+): Promise<unknown> {
   const url = `${args.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   let res: Response;
   try {
@@ -67,7 +91,7 @@ export async function chatJson(args: ChatJsonArgs): Promise<unknown> {
         model: args.model,
         messages: [
           { role: "system", content: args.system },
-          { role: "user", content: args.user },
+          { role: "user", content: userContent },
         ],
         response_format: { type: "json_object" },
         temperature: 0.2,
@@ -78,7 +102,7 @@ export async function chatJson(args: ChatJsonArgs): Promise<unknown> {
     throw new AiError("LLM request failed: network error");
   }
   if (!res.ok) {
-    throw new AiError(`LLM request failed (status ${res.status})`);
+    throw new AiError(`LLM request failed (status ${res.status})${await errorSnippet(res)}`);
   }
   const text = await res.text();
   let envelope: unknown;
@@ -88,6 +112,28 @@ export async function chatJson(args: ChatJsonArgs): Promise<unknown> {
     throw new AiError("LLM returned invalid JSON");
   }
   return JSON.parse(extractJson(extractContent(envelope))) as unknown;
+}
+
+/**
+ * POST {baseUrl}/chat/completions with response_format json_object.
+ * Returns the parsed JSON body. Throws AiError (safe messages only) on
+ * network failure, non-2xx status, or invalid JSON.
+ */
+export async function chatJson(args: ChatJsonArgs): Promise<unknown> {
+  return postChatCompletions(args, args.user);
+}
+
+/**
+ * Vision variant of chatJson: sends text + image data URLs in one user message.
+ * Whether the configured model actually supports vision is unknown until the
+ * provider answers — callers should map vision-unsupported provider errors
+ * (see keepa/vision.ts isVisionUnsupportedError) to a clear user message.
+ */
+export async function chatJsonVision(args: ChatJsonVisionArgs): Promise<unknown> {
+  return postChatCompletions(args, [
+    { type: "text", text: args.user },
+    ...args.images.map((u) => ({ type: "image_url", image_url: { url: u } })),
+  ]);
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

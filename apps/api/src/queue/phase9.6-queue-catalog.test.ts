@@ -35,6 +35,7 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
 
   it("2. worker registry lists every real Worker", () => {
     expect(WORKER_REGISTRY.map((w) => w.queueName).sort()).toEqual([
+      "asinWatch",
       "budgetPacer",
       "cashbackLpScore",
       "cashbackRateCompare",
@@ -60,6 +61,7 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
 
   it("3. Queue + Worker + Processor => IMPLEMENTED", () => {
     for (const name of [
+      "asinWatch",
       "urlChange",
       "conversionUpload",
       "trafficMonitor",
@@ -86,6 +88,7 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
       expect(entry.entryPoint).toBe("WorkerRuntime.start");
     }
     expect(getImplementedQueueNames().sort()).toEqual([
+      "asinWatch",
       "budgetPacer",
       "cashbackLpScore",
       "cashbackRateCompare",
@@ -169,6 +172,7 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
     expect(runtimeSrc).toMatch(
       /new Worker[\s\S]*QUEUE_NAMES\.cashbackRateCompare/
     );
+    expect(runtimeSrc).toMatch(/new Worker[\s\S]*QUEUE_NAMES\.asinWatch/);
     expect(runtimeSrc).not.toMatch(
       /new Worker[\s\S]*QUEUE_NAMES\.googleAdsSync/
     );
@@ -200,6 +204,7 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
 
   it("7. Queue names remain stable", () => {
     expect(QUEUE_NAMES).toEqual({
+      asinWatch: "asinWatch",
       googleAdsSync: "googleAdsSync",
       urlChange: "urlChange",
       conversionUpload: "conversionUpload",
@@ -250,6 +255,7 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
     expect(body).not.toMatch(/clickProcessing: new Queue/);
     expect(body).not.toMatch(/analyticsAggregation: new Queue/);
     expect(getImplementedQueueNames().sort()).toEqual([
+      "asinWatch",
       "budgetPacer",
       "cashbackLpScore",
       "cashbackRateCompare",
@@ -311,6 +317,6 @@ describe("Phase 9.6 Queue Catalog Honesty", () => {
 
 describe("Phase 9.6 health route import smoke", () => {
   it("getQueueCatalog is importable without Redis", () => {
-    expect(getQueueCatalog().length).toBe(19);
+    expect(getQueueCatalog().length).toBe(20);
   });
 });

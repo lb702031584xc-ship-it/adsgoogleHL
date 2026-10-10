@@ -7,10 +7,16 @@
  *   同一 tenant 10 次/分钟限流（Redis；不可用时 fail-open）。
  *   失败降级：token 不足/429/无数据 → verdict=unknown，绝不抛 500。
  *   无 key → 400 并提示去"AI 设置 → Keepa API Key"配置。
+ * - POST /api/v1/keepa/vision-judge
+ *   multipart：price（价格历史截图，≤5MB）、rank（排名截图，≤5MB）、asin（可选）。
+ *   走 vision LLM 看图判断（OCR 读不出曲线趋势）。无 LLM 配置 → 400；
+ *   模型不支持 vision → 400 明确指引；失败不抛 500。
+ * - GET /api/v1/keepa/vision-status → { llmConfigured }（供前端禁用按钮）。
  */
 import { Redis } from "ioredis";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { PrismaClient } from "@adlinklab/database";
+import multipart from "@fastify/multipart";
 import {
   AppError,
   UnauthorizedError,
@@ -21,14 +27,23 @@ import {
   type SessionAuthInfo,
 } from "../auth/sessions.js";
 import { decryptSecret, assertAiSettingsPepperConfigured } from "../ai/crypto.js";
+import { AiError, chatJsonVision } from "../ai/llm.js";
 import {
   fetchKeepaProduct,
   keepaDomainId,
 } from "../keepa/client.js";
 import {
   evaluateKeepa,
+  parseManualNumbers,
+  evaluateManualNumbers,
   type KeepaEvaluation,
 } from "../keepa/rules.js";
+import {
+  judgeKeepaScreenshots,
+  isVisionUnsupportedError,
+  type KeepaVisionImage,
+  type VisionLlmConfig,
+} from "../keepa/vision.js";
 
 const SETTING_KEEPA_API_KEY_ENC = "keepa.apiKeyEnc";
 
@@ -38,6 +53,8 @@ interface Deps {
   redis?: RateLimitRedis;
   /** Injectable for tests. */
   fetchKeepaImpl?: typeof fetchKeepaProduct;
+  /** Vision LLM impl（测试用注入）。 */
+  visionImpl?: typeof chatJsonVision;
 }
 
 export interface RateLimitRedis {
@@ -128,6 +145,96 @@ async function readKeepaApiKey(prisma: PrismaClient): Promise<string | null> {
 
 const ASIN_RE = /^[A-Z0-9]{10}$/i;
 
+/** vision-judge 单图上限 5MB（jpeg/png/webp）。 */
+const VISION_MAX_BYTES = 5 * 1024 * 1024;
+
+const VISION_MIMETYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/** 读取 LLM 配置（AI 设置）；未配置返回 null（调用方转 400 指引）。 */
+async function readLlmConfig(prisma: PrismaClient): Promise<VisionLlmConfig | null> {
+  const rows = (await prisma.aiSetting.findMany({
+    select: { key: true, value: true },
+  })) as Array<{ key: string; value: string }>;
+  let baseUrl: string | undefined;
+  let model: string | undefined;
+  let apiKeyEnc: string | undefined;
+  for (const r of rows) {
+    if (r.key === "llm.baseUrl") baseUrl = r.value;
+    else if (r.key === "llm.model") model = r.value;
+    else if (r.key === "llm.apiKeyEnc") apiKeyEnc = r.value;
+  }
+  if (!baseUrl || !model || !apiKeyEnc) return null;
+  try {
+    const pepper = assertAiSettingsPepperConfigured();
+    const apiKey = decryptSecret(apiKeyEnc, pepper).trim();
+    if (!apiKey) return null;
+    return { baseUrl, model, apiKey };
+  } catch {
+    return null;
+  }
+}
+
+interface VisionUpload {
+  buf: Buffer;
+  mimetype: string;
+}
+
+interface VisionUploads {
+  price?: VisionUpload;
+  rank?: VisionUpload;
+  asin: string;
+}
+
+/** 读取 vision-judge 的 multipart：price/rank 图片 + 可选 asin。图片只在内存处理。 */
+async function readVisionUploads(request: FastifyRequest): Promise<VisionUploads> {
+  const out: VisionUploads = { asin: "" };
+  try {
+    for await (const part of request.parts()) {      if (part.type === "file") {
+        const field = part.fieldname;
+        if (field !== "price" && field !== "rank") {
+          // 不相干的文件：直接消费丢弃，避免挂起。
+          part.file.resume();
+          continue;
+        }
+        const mimetype = (part.mimetype ?? "").toLowerCase();
+        if (!VISION_MIMETYPES.includes(mimetype)) {
+          throw new ValidationError(
+            `只接受 jpeg/png/webp 图片，${field} 收到：${part.mimetype || "未知类型"}`
+          );
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const chunk of part.file) {
+          size += (chunk as Buffer).length;
+          if (size > VISION_MAX_BYTES) {
+            throw new ValidationError(`图片超过 5MB 上限（${field}）`);
+          }
+          chunks.push(chunk as Buffer);
+        }
+        const buf = Buffer.concat(chunks);
+        if (buf.length === 0) {
+          throw new ValidationError(`${field} 图片为空`);
+        }
+        out[field] = { buf, mimetype };
+      } else if (part.fieldname === "asin" && typeof part.value === "string") {
+        out.asin = part.value.trim().toUpperCase().slice(0, 10);
+      }
+    }
+  } catch (e) {
+    if (e instanceof ValidationError) throw e;
+    // @fastify/multipart 超限抛 FastifyError("request file too large")
+    if (e instanceof Error && /too large/i.test(e.message)) {
+      throw new ValidationError("图片超过 5MB 上限");
+    }
+    throw new ValidationError("图片上传失败，请重试");
+  }
+  return out;
+}
+
+function toDataUrl(u: VisionUpload): string {
+  return `data:${u.mimetype};base64,${u.buf.toString("base64")}`;
+}
+
 export interface KeepaValidateResult {
   asin: string;
   verdict: KeepaEvaluation["verdict"];
@@ -135,9 +242,17 @@ export interface KeepaValidateResult {
   metrics: KeepaEvaluation["metrics"];
 }
 
-export function registerKeepaRoutes(app: FastifyInstance, deps: Deps): void {
+export function registerKeepaRoutes(app: FastifyInstance, deps: Deps): Promise<void> {
   const { prisma } = deps;
   const fetchKeepaImpl = deps.fetchKeepaImpl ?? fetchKeepaProduct;
+  const visionImpl = deps.visionImpl ?? chatJsonVision;
+
+  return (async () => {
+  // multipart：仅本模块的 vision-judge 上传用。图片只在内存里处理，不落盘。
+  // fileSize 由插件在流层面强制执行，超限错误在 readVisionUploads 里转成友好文案。
+  await app.register(multipart, {
+    limits: { files: 3, fileSize: VISION_MAX_BYTES },
+  });
 
   /** Keepa API Key 是否已配置（只返回布尔值）。 */
   app.get("/api/v1/keepa/status", async (request) => {
@@ -221,4 +336,84 @@ export function registerKeepaRoutes(app: FastifyInstance, deps: Deps): void {
 
     return { results };
   });
+
+  /** Vision LLM 是否可用（只返回布尔值，供前端禁用"AI 看图"按钮）。 */
+  app.get("/api/v1/keepa/vision-status", async (request) => {
+    await requireSession(deps, request);
+    const llm = await readLlmConfig(prisma);
+    return { llmConfigured: !!llm };
+  });
+
+  /**
+   * 手动输入数字判定（"AI 看图"弹窗的手动模式）。
+   * body：价格组/排名组/评论组数字（reviews90dAgo 可选）。纯计算，无外部调用。
+   * 非法输入 → 400；同一 tenant 10 次/分钟限流。
+   */
+  app.post<{ Body: Record<string, unknown> }>(
+    "/api/v1/keepa/manual-judge",
+    async (request) => {
+      const session = await requireSession(deps, request);
+
+      const allowed = await checkRateLimit(deps.redis, session.tenantId);
+      if (!allowed) {
+        throw new AppError("手动判断频率超限（10 次/分钟），请稍后再试", {
+          code: "RATE_LIMITED",
+          statusCode: 429,
+        });
+      }
+
+      const input = parseManualNumbers(request.body ?? {});
+      return evaluateManualNumbers(input);
+    }
+  );
+
+  /**
+   * Keepa 截图 AI 看图判断。
+   * multipart：price（价格历史截图）、rank（排名截图）、asin（可选），
+   * 每图 ≤5MB、仅 jpeg/png/webp。图片只在内存处理，不落盘、不存库。
+   * 无 LLM 配置 → 400；模型不支持 vision → 400 明确指引；其他失败不抛 500。
+   */
+  app.post("/api/v1/keepa/vision-judge", async (request) => {
+    const session = await requireSession(deps, request);
+
+    const allowed = await checkRateLimit(deps.redis, session.tenantId);
+    if (!allowed) {
+      throw new AppError("AI 看图频率超限（10 次/分钟），请稍后再试", {
+        code: "RATE_LIMITED",
+        statusCode: 429,
+      });
+    }
+
+    const llm = await readLlmConfig(prisma);
+    if (!llm) {
+      throw new ValidationError(
+        "未配置 LLM（管理 → AI 设置），无法使用 AI 看图"
+      );
+    }
+
+    const uploads = await readVisionUploads(request);
+    const images: KeepaVisionImage[] = [];
+    if (uploads.price) images.push({ kind: "price", dataUrl: toDataUrl(uploads.price) });
+    if (uploads.rank) images.push({ kind: "rank", dataUrl: toDataUrl(uploads.rank) });
+    if (images.length === 0) {
+      throw new ValidationError("请至少上传一张截图（价格历史或排名）");
+    }
+
+    try {
+      const judgment = await judgeKeepaScreenshots(
+        images,
+        llm,
+        uploads.asin ? { asin: uploads.asin, impl: visionImpl } : { impl: visionImpl }
+      );
+      return { asin: uploads.asin || null, ...judgment };
+    } catch (e) {
+      if (e instanceof AiError && isVisionUnsupportedError(e)) {
+        throw new ValidationError(
+          "当前模型不支持图片识别，请更换支持 vision 的模型（管理 → AI 设置）"
+        );
+      }
+      throw e;
+    }
+  });
+  })();
 }

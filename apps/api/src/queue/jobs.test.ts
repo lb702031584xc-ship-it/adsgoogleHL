@@ -7,6 +7,7 @@ describe("queue job definitions", () => {
     expect(names).toEqual(
       [
         "analyticsAggregation",
+        "asinWatch",
         "budgetPacer",
         "cashbackLpScore",
         "cashbackRateCompare",

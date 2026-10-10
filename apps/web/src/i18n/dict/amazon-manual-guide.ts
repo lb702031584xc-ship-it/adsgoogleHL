@@ -43,6 +43,35 @@ export interface AmazonManualGuideDict {
   keepaManualTitle: string;
   keepaManualHint: string;
   keepaManualProgress: string; // "已核查 {done}/{total}"
+  visionButton: string;
+  visionNoLlm: string;
+  visionNoLlmHint: string;
+  visionModalTitle: string;
+  visionPriceLabel: string;
+  visionRankLabel: string;
+  visionSubmit: string;
+  visionRunning: string;
+  visionClose: string;
+  visionNeedOne: string;
+  visionConfidence: string;
+  visionConfidenceHigh: string;
+  visionConfidenceMedium: string;
+  visionConfidenceLow: string;
+  visionTabScreenshot: string;
+  visionTabManual: string;
+  manualPriceGroup: string;
+  manualRankGroup: string;
+  manualReviewGroup: string;
+  mAmazonPriceNow: string;
+  mAmazonPrice30dAgo: string;
+  mPriceLow90d: string;
+  mPriceHigh90d: string;
+  mRankNow: string;
+  mRankBest90d: string;
+  mRankWorst90d: string;
+  mReviewsNow: string;
+  mReviews90dAgo: string;
+  manualInvalidNumber: string;
   addRow: string;
   removeRow: string;
   namePlaceholder: string;
@@ -117,6 +146,35 @@ export const zh: AmazonManualGuideDict = {
   keepaManualTitle: "手动逐个核查",
   keepaManualHint: "点「查看」去亚马逊看 Keepa 曲线，查完打勾，就不会搞混哪个查过了",
   keepaManualProgress: "已核查 {done}/{total}",
+  visionButton: "AI 看图",
+  visionNoLlm: "未配置 LLM",
+  visionNoLlmHint: "去 管理 → AI 设置 配置 LLM（需要支持 vision 的模型，如 GPT-4o）后可用。",
+  visionModalTitle: "AI 看图判断",
+  visionPriceLabel: "价格历史图（Keepa 切到 90 天范围，勾选 Amazon 价格 + New 价格曲线）",
+  visionRankLabel: "Sales Rank 曲线（同样切 90 天）",
+  visionSubmit: "开始判断",
+  visionRunning: "AI 看图中…",
+  visionClose: "关闭",
+  visionNeedOne: "请至少上传一张截图。",
+  visionConfidence: "把握度",
+  visionConfidenceHigh: "高",
+  visionConfidenceMedium: "中",
+  visionConfidenceLow: "低",
+  visionTabScreenshot: "截图 AI 判断",
+  visionTabManual: "手动输入数字",
+  manualPriceGroup: "价格（对着价格历史图 90 天抄）",
+  manualRankGroup: "排名（对着 Sales Rank 图 90 天抄）",
+  manualReviewGroup: "评论（Keepa 面板抄数字，不用截图）",
+  mAmazonPriceNow: "当前 Amazon 价格",
+  mAmazonPrice30dAgo: "30 天前 Amazon 价格",
+  mPriceLow90d: "90 天内最低价",
+  mPriceHigh90d: "90 天内最高价",
+  mRankNow: "当前 Sales Rank",
+  mRankBest90d: "90 天内最好排名（数字最小）",
+  mRankWorst90d: "90 天内最差排名（数字最大）",
+  mReviewsNow: "当前评论数",
+  mReviews90dAgo: "90 天前评论数（可选）",
+  manualInvalidNumber: "请输入有效数字（≥0），最低价不能高于最高价",
   addRow: "添加一行",
   removeRow: "删除",
   namePlaceholder: "如：降噪蓝牙耳机",
@@ -322,6 +380,35 @@ export const en: AmazonManualGuideDict = {
   keepaManualTitle: "Manual check",
   keepaManualHint: "Open each product on Amazon to check its Keepa chart, then tick it off",
   keepaManualProgress: "Checked {done}/{total}",
+  visionButton: "AI Judge",
+  visionNoLlm: "LLM not configured",
+  visionNoLlmHint: "Configure an LLM in Admin → AI Settings first (needs a vision-capable model, e.g. GPT-4o).",
+  visionModalTitle: "AI Chart Judgment",
+  visionPriceLabel: "Price history chart (set Keepa to 90 days, enable Amazon price + New price curves)",
+  visionRankLabel: "Sales Rank chart (also 90 days)",
+  visionSubmit: "Judge",
+  visionRunning: "Judging…",
+  visionClose: "Close",
+  visionNeedOne: "Please upload at least one screenshot.",
+  visionConfidence: "Confidence",
+  visionConfidenceHigh: "High",
+  visionConfidenceMedium: "Medium",
+  visionConfidenceLow: "Low",
+  visionTabScreenshot: "Screenshot AI",
+  visionTabManual: "Manual numbers",
+  manualPriceGroup: "Price (copy from 90-day price history chart)",
+  manualRankGroup: "Rank (copy from 90-day Sales Rank chart)",
+  manualReviewGroup: "Reviews (numbers from Keepa panel, no screenshot needed)",
+  mAmazonPriceNow: "Current Amazon price",
+  mAmazonPrice30dAgo: "Amazon price 30 days ago",
+  mPriceLow90d: "90-day low",
+  mPriceHigh90d: "90-day high",
+  mRankNow: "Current sales rank",
+  mRankBest90d: "90-day best rank (lowest number)",
+  mRankWorst90d: "90-day worst rank (highest number)",
+  mReviewsNow: "Current review count",
+  mReviews90dAgo: "Review count 90 days ago (optional)",
+  manualInvalidNumber: "Enter valid numbers (≥0); low must not exceed high",
   addRow: "Add row",
   removeRow: "Delete",
   namePlaceholder: "e.g. noise-cancelling earbuds",

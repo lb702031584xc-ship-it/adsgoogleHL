@@ -8,6 +8,7 @@
  * Keepa 时间换算：(keepaTime + 21564000) * 60000 = Unix 毫秒。
  * 价格 -1 = 该时段无货/无报价；排名只取 >0 的值。
  */
+import { ValidationError } from "@adlinklab/shared";
 
 // ===== 阈值（对应文案规则）=====
 /** kill：30 天跌幅 > 25%（文案："价格 30 天内跌幅超过 25%（利润守不住）"） */
@@ -295,4 +296,178 @@ function rankMedian90d(csv: Array<number[] | null>, nowMs: number): number | nul
   if (vals.length < 2) return null;
   const med = median(vals);
   return med === null ? null : round1(med);
+}
+
+/* ============================================================
+ * 手动输入数字判定（"AI 看图"弹窗的手动模式）。
+ * 用户对着 Keepa 图抄几个关键数字，映射成与 evaluateKeepa 相同的
+ * verdict 结构。断货天数手动无法得知，该项恒为 unknown（不参与判定）。
+ * ============================================================ */
+
+export interface ManualNumbersInput {
+  amazonPriceNow: number;
+  amazonPrice30dAgo: number;
+  priceLow90d: number;
+  priceHigh90d: number;
+  rankNow: number;
+  rankBest90d: number;
+  rankWorst90d: number;
+  reviewsNow: number;
+  /** 可选；不填则评论增长记 unknown，不参与 pass 判定 */
+  reviews90dAgo: number | null;
+}
+
+export interface ManualMetrics {
+  priceDrop30dPct: number | null;
+  priceVolatility90dPct: number | null;
+  rankRatio90d: number | null;
+  reviewGrowth90d: number | null;
+}
+
+export interface ManualEvaluation {
+  verdict: KeepaVerdict;
+  reasons: KeepaReason[];
+  metrics: ManualMetrics;
+}
+
+const MANUAL_REQUIRED_FIELDS = [
+  "amazonPriceNow",
+  "amazonPrice30dAgo",
+  "priceLow90d",
+  "priceHigh90d",
+  "rankNow",
+  "rankBest90d",
+  "rankWorst90d",
+  "reviewsNow",
+] as const;
+
+const MANUAL_FIELD_LABELS: Record<string, string> = {
+  amazonPriceNow: "当前 Amazon 价格",
+  amazonPrice30dAgo: "30 天前 Amazon 价格",
+  priceLow90d: "90 天内最低价",
+  priceHigh90d: "90 天内最高价",
+  rankNow: "当前 Sales Rank",
+  rankBest90d: "90 天内最好排名",
+  rankWorst90d: "90 天内最差排名",
+  reviewsNow: "当前评论数",
+  reviews90dAgo: "90 天前评论数",
+};
+
+function asNonNegNumber(v: unknown, label: string): number {
+  const n =
+    typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  if (!Number.isFinite(n) || n < 0) {
+    throw new ValidationError(`${label}：请输入有效数字（≥0）`);
+  }
+  return n;
+}
+
+/** 校验并解析手动输入；非法直接抛 ValidationError（路由转 400）。 */
+export function parseManualNumbers(body: unknown): ManualNumbersInput {
+  if (typeof body !== "object" || body === null) {
+    throw new ValidationError("请求体格式错误");
+  }
+  const b = body as Record<string, unknown>;
+  const out: Record<string, number> = {};
+  for (const f of MANUAL_REQUIRED_FIELDS) {
+    out[f] = asNonNegNumber(b[f], MANUAL_FIELD_LABELS[f]);
+  }
+  let reviews90dAgo: number | null = null;
+  const rawOpt = b["reviews90dAgo"];
+  if (rawOpt !== undefined && rawOpt !== null && String(rawOpt).trim() !== "") {
+    reviews90dAgo = asNonNegNumber(rawOpt, MANUAL_FIELD_LABELS["reviews90dAgo"]);
+  }
+  if (out["priceLow90d"] > out["priceHigh90d"]) {
+    throw new ValidationError("最低价不能高于最高价");
+  }
+  return {
+    amazonPriceNow: out["amazonPriceNow"],
+    amazonPrice30dAgo: out["amazonPrice30dAgo"],
+    priceLow90d: out["priceLow90d"],
+    priceHigh90d: out["priceHigh90d"],
+    rankNow: out["rankNow"],
+    rankBest90d: out["rankBest90d"],
+    rankWorst90d: out["rankWorst90d"],
+    reviewsNow: out["reviewsNow"],
+    reviews90dAgo,
+  };
+}
+
+/**
+ * 手动数字映射判定。阈值与 evaluateKeepa 完全一致：
+ * kill = 30 天跌幅>25% 或排名最差/最好>10 倍；
+ * pass = 90 天价格波动<15% 且最差排名<100 且（填了 90 天前评论数时）评论增长>0；
+ * 两头不靠 → unknown。断货手动无法得知，不参与判定。
+ */
+export function evaluateManualNumbers(input: ManualNumbersInput): ManualEvaluation {
+  const m: ManualMetrics = {
+    priceDrop30dPct:
+      input.amazonPrice30dAgo > 0
+        ? round1(((input.amazonPrice30dAgo - input.amazonPriceNow) / input.amazonPrice30dAgo) * 100)
+        : null,
+    priceVolatility90dPct:
+      input.priceHigh90d + input.priceLow90d > 0
+        ? round1(
+            ((input.priceHigh90d - input.priceLow90d) /
+              ((input.priceHigh90d + input.priceLow90d) / 2)) *
+              100
+          )
+        : null,
+    rankRatio90d:
+      input.rankBest90d > 0 ? round1(input.rankWorst90d / input.rankBest90d) : null,
+    reviewGrowth90d:
+      input.reviews90dAgo !== null ? Math.round(input.reviewsNow - input.reviews90dAgo) : null,
+  };
+
+  const reasons: KeepaReason[] = [];
+  if (m.priceDrop30dPct !== null && m.priceDrop30dPct > KILL_PRICE_DROP_30D_PCT) {
+    reasons.push({
+      code: "price_drop",
+      detail: `30 天跌幅 ${m.priceDrop30dPct}%（>25%，利润守不住）`,
+    });
+  }
+  if (m.rankRatio90d !== null && m.rankRatio90d > KILL_RANK_MAX_MIN_RATIO_90D) {
+    reasons.push({
+      code: "rank_swing",
+      detail: `90 天排名最差/最好 ${m.rankRatio90d} 倍（>10 倍，大起大落）`,
+    });
+  }
+  if (reasons.length > 0) {
+    return { verdict: "kill", reasons, metrics: m };
+  }
+
+  const reviewOk = m.reviewGrowth90d === null || m.reviewGrowth90d > PASS_REVIEW_GROWTH_90D;
+  if (
+    m.priceVolatility90dPct !== null &&
+    m.priceVolatility90dPct < PASS_PRICE_SWING_90D_PCT &&
+    input.rankWorst90d < PASS_RANK_MEDIAN_90D &&
+    reviewOk
+  ) {
+    const parts = [
+      `90 天价格波动 ${m.priceVolatility90dPct}%`,
+      `最差排名 ${input.rankWorst90d}`,
+    ];
+    if (m.reviewGrowth90d !== null) parts.push(`评论增长 ${m.reviewGrowth90d}`);
+    return {
+      verdict: "pass",
+      reasons: [
+        {
+          code: "pass",
+          detail: `${parts.join("、")}，均达标（断货情况手动无法得知，未计入）`,
+        },
+      ],
+      metrics: m,
+    };
+  }
+
+  return {
+    verdict: "unknown",
+    reasons: [
+      {
+        code: "insufficient",
+        detail: "介于通过与淘汰之间，建议人工复核（断货情况手动无法得知）",
+      },
+    ],
+    metrics: m,
+  };
 }
