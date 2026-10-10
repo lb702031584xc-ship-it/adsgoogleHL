@@ -7,6 +7,21 @@ import type { AmazonManualGuideDict } from "@/i18n/dict/amazon-manual-guide";
 const LS_CHECKS = "adlinklab-manual-guide-checks";
 const LS_CATS = "adlinklab-manual-guide-cats";
 const LS_CANDIDATES = "adlinklab-manual-guide-candidates";
+const LS_COUNTRY = "adlinklab-manual-guide-country";
+
+// 扫榜三榜单路径（与 scan 步骤 checklist 前三项一一对应）
+const SCAN_PATHS = ["/Best-Sellers/zgbs", "/gp/movers-and-shakers", "/gp/new-releases"];
+const AMAZON_DOMAINS: Record<string, string> = {
+  US: "www.amazon.com",
+  UK: "www.amazon.co.uk",
+  DE: "www.amazon.de",
+  FR: "www.amazon.fr",
+  IT: "www.amazon.it",
+  ES: "www.amazon.es",
+  CA: "www.amazon.ca",
+  AU: "www.amazon.com.au",
+  JP: "www.amazon.co.jp",
+};
 
 interface CandidateRow {
   id: string;
@@ -33,6 +48,7 @@ function StepCard({
   checks,
   onCheck,
   children,
+  scanLinks,
 }: {
   step: { id: string; dayLabel: string; title: string; intro: string[]; checklist: string[]; tools: { label: string; href: string; external?: boolean }[] };
   d: AmazonManualGuideDict;
@@ -41,6 +57,7 @@ function StepCard({
   checks: Record<string, boolean>;
   onCheck: (key: string, v: boolean) => void;
   children?: React.ReactNode;
+  scanLinks?: string[];
 }) {
   const done = step.checklist.filter((_, i) => checks[`${step.id}:${i}`]).length;
   const total = step.checklist.length;
@@ -80,17 +97,31 @@ function StepCard({
           <ul className="space-y-2">
             {step.checklist.map((item, i) => {
               const key = `${step.id}:${i}`;
+              const link = scanLinks && i < scanLinks.length ? scanLinks[i] : null;
               return (
                 <li key={i}>
-                  <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-ink/10 px-3 py-2 text-sm text-ink/85 transition hover:bg-ink/[0.03]">
-                    <input
-                      type="checkbox"
-                      checked={!!checks[key]}
-                      onChange={(e) => onCheck(key, e.target.checked)}
-                      className="mt-1 h-4 w-4 accent-emerald-600"
-                    />
-                    <span className={checks[key] ? "text-ink/50 line-through" : ""}>{item}</span>
-                  </label>
+                  <div className="flex items-start gap-2.5 rounded-lg border border-ink/10 px-3 py-2 text-sm text-ink/85 transition hover:bg-ink/[0.03]">
+                    <label className="mt-0.5 flex cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!checks[key]}
+                        onChange={(e) => onCheck(key, e.target.checked)}
+                        className="h-4 w-4 accent-emerald-600"
+                      />
+                    </label>
+                    {link ? (
+                      <a
+                        href={link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sky-700 underline underline-offset-2 hover:text-sky-900"
+                      >
+                        <span className={checks[key] ? "text-ink/50 line-through" : ""}>{item}</span> ↗
+                      </a>
+                    ) : (
+                      <span className={checks[key] ? "text-ink/50 line-through" : ""}>{item}</span>
+                    )}
+                  </div>
                 </li>
               );
             })}
@@ -98,11 +129,13 @@ function StepCard({
           {children}
           {step.tools.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {step.tools.map((t) =>
-                t.external ? (
+              {step.tools.map((t, ti) => {
+                const href =
+                  scanLinks && step.id === "scan" && ti < scanLinks.length ? scanLinks[ti] : t.href;
+                return t.external ? (
                   <a
-                    key={t.href}
-                    href={t.href}
+                    key={href}
+                    href={href}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="rounded-lg border border-ink/15 px-3 py-1.5 text-sm text-ink/80 transition hover:bg-ink/5"
@@ -111,14 +144,14 @@ function StepCard({
                   </a>
                 ) : (
                   <Link
-                    key={t.href}
-                    href={t.href}
+                    key={href}
+                    href={href}
                     className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90"
                   >
                     {t.label}
                   </Link>
-                )
-              )}
+                );
+              })}
             </div>
           )}
         </div>
@@ -131,6 +164,7 @@ export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDi
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [cats, setCats] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
+  const [country, setCountry] = useState("US");
   const [open, setOpen] = useState<Record<string, boolean>>({ categories: true });
   const [ready, setReady] = useState(false);
 
@@ -138,6 +172,7 @@ export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDi
     setChecks(loadJson(LS_CHECKS, {}));
     setCats(loadJson<string[]>(LS_CATS, []));
     setCandidates(loadJson<CandidateRow[]>(LS_CANDIDATES, []));
+    setCountry(loadJson(LS_COUNTRY, "US"));
     setReady(true);
   }, []);
 
@@ -150,6 +185,14 @@ export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDi
   useEffect(() => {
     if (ready) localStorage.setItem(LS_CANDIDATES, JSON.stringify(candidates));
   }, [candidates, ready]);
+  useEffect(() => {
+    if (ready) localStorage.setItem(LS_COUNTRY, JSON.stringify(country));
+  }, [country, ready]);
+
+  const scanLinks = useMemo(() => {
+    const domain = AMAZON_DOMAINS[country] ?? AMAZON_DOMAINS.US;
+    return SCAN_PATHS.map((p) => `https://${domain}${p}`);
+  }, [country]);
 
   const total = useMemo(
     () => d.steps.reduce((n, s) => n + s.checklist.length, 0),
@@ -230,6 +273,7 @@ export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDi
           onToggle={() => toggleStep(step.id)}
           checks={checks}
           onCheck={onCheck}
+          scanLinks={step.id === "scan" ? scanLinks : undefined}
         >
           {step.id === "categories" && (
             <div>
@@ -272,6 +316,20 @@ export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDi
 
           {step.id === "scan" && (
             <div>
+              <div className="mb-3 flex items-center gap-2">
+                <label className="text-xs font-medium text-ink/70">{d.scanCountryLabel}</label>
+                <select
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  className="rounded-lg border border-ink/15 bg-white px-2 py-1.5 text-sm text-ink"
+                >
+                  {Object.keys(AMAZON_DOMAINS).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <p className="text-sm font-medium text-ink">{d.candidateTitle}</p>
               <p className="mt-1 text-xs text-ink/60">{d.candidateHint}</p>
               <div className="mt-3 overflow-x-auto rounded-xl border border-ink/10">

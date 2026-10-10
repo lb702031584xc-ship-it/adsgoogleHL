@@ -27,6 +27,7 @@ export interface AmazonManualGuideDict {
   selectedCount: string; // "已选 {n}/2"
   candidateTitle: string;
   candidateHint: string;
+  scanCountryLabel: string;
   colName: string;
   colAsin: string;
   colRank: string;
@@ -69,6 +70,7 @@ export const zh: AmazonManualGuideDict = {
   selectedCount: "已选 {n}/2",
   candidateTitle: "候选清单",
   candidateHint: "扫榜时把有潜力的产品记下来，目标 20 个。数据先粗记，后面 Keepa 验证时再细化。",
+  scanCountryLabel: "榜单站点",
   colName: "产品名",
   colAsin: "ASIN",
   colRank: "类目排名",
@@ -230,6 +232,7 @@ export const en: AmazonManualGuideDict = {
   selectedCount: "{n}/2 selected",
   candidateTitle: "Candidate list",
   candidateHint: "Jot down promising products while scanning. Aim for 20 — record roughly now, refine during Keepa validation.",
+  scanCountryLabel: "Ranking site",
   colName: "Product",
   colAsin: "ASIN",
   colRank: "Category rank",
