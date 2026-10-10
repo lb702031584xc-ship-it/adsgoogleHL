@@ -1,8 +1,8 @@
 -- Offer 最终链接指标抓取 + 推荐指数（第三批）
 CREATE TABLE "offer_metrics" (
-  "id" TEXT NOT NULL,
-  "offer_id" TEXT NOT NULL,
-  "tenant_id" TEXT NOT NULL,
+  "id" UUID NOT NULL,
+  "offer_id" UUID NOT NULL,
+  "tenant_id" UUID NOT NULL,
   "metrics" JSONB NOT NULL,
   "score" INTEGER,
   "grade" TEXT,
