@@ -79,6 +79,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             ...(isAdmin
               ? [{ href: "/admin/ai-settings", label: ni.amazonPaapi }]
               : []),
+            { href: "/amazon/manual-guide", label: ni.amazonManualGuide },
             { href: "/amazon/discovery", label: ni.amazonDiscovery },
             { href: "/amazon/trends", label: ni.amazonTrends },
             { href: "/amazon/pipeline", label: ni.amazonPipeline },
