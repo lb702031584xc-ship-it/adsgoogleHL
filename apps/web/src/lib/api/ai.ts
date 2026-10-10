@@ -372,6 +372,20 @@ export async function importAmazonProducts(
   );
 }
 
+/** 解析 Amazon 产品链接：提取 ASIN + slug 产品名（纯本地解析；BSR 拿不到） */
+export interface ParsedAmazonUrl {
+  asin: string | null;
+  name: string | null;
+  nameSource: "slug" | "none";
+}
+
+export async function parseAmazonProductUrl(url: string): Promise<ParsedAmazonUrl> {
+  return aiFetch<ParsedAmazonUrl>("/api/v1/amazon/parse-url", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
 /** 流量门阈值：官网月访问量 / 品牌热度（0-100 相对值）/ 关键词热度（0-100 相对值） */
 export interface TrafficThresholds {
   officialSiteMonthlyVisits: number;

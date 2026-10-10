@@ -28,6 +28,7 @@ import {
   validateCriteria,
 } from "../services/amazon-discovery.js";
 import { decryptSecret, assertAiSettingsPepperConfigured } from "../ai/crypto.js";
+import { parseAmazonUrl } from "../services/amazon-parse-url.js";
 
 interface Deps {
   prisma: PrismaClient;
@@ -111,6 +112,24 @@ export function registerAmazonDiscoveryRoutes(
     const session = await requireSession(deps, request);
     const discoveries = await listDiscoveries(prisma, session.tenantId);
     return { discoveries };
+  });
+
+  /**
+   * 解析 Amazon 产品链接：提取 ASIN + slug 产品名（纯本地解析，无外部请求）。
+   * 类目排名（BSR）服务器拿不到，调用方留空手填。
+   */
+  app.post<{
+    Body: { url?: unknown };
+  }>("/api/v1/amazon/parse-url", async (request) => {
+    await requireSession(deps, request);
+    const url = typeof request.body?.url === "string" ? request.body.url.trim() : "";
+    if (!url) {
+      throw new ValidationError("请粘贴产品链接");
+    }
+    if (url.length > 2000) {
+      throw new ValidationError("链接过长");
+    }
+    return parseAmazonUrl(url);
   });
 
   /** 某次发现的产品列表 */

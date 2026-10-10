@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { AmazonManualGuideDict } from "@/i18n/dict/amazon-manual-guide";
+import { parseAmazonProductUrlAction } from "@/lib/api/amazon-actions";
 
 const LS_CHECKS = "adlinklab-manual-guide-checks";
 const LS_CATS = "adlinklab-manual-guide-cats";
@@ -165,6 +166,9 @@ export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDi
   const [cats, setCats] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
   const [country, setCountry] = useState("US");
+  const [pasteUrl, setPasteUrl] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState("");
   const [open, setOpen] = useState<Record<string, boolean>>({ categories: true });
   const [ready, setReady] = useState(false);
 
@@ -225,6 +229,37 @@ export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDi
 
   const onCheck = (key: string, v: boolean) => setChecks((prev) => ({ ...prev, [key]: v }));
   const toggleStep = (id: string) => setOpen((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const addFromUrl = async () => {
+    const url = pasteUrl.trim();
+    if (!url || parsing) return;
+    setParsing(true);
+    setParseError("");
+    try {
+      const res = await parseAmazonProductUrlAction(url);
+      if (!res.ok) {
+        setParseError(res.error);
+        return;
+      }
+      if (!res.data.asin) {
+        setParseError(d.parseUrlNoAsin);
+        return;
+      }
+      setCandidates((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-${prev.length}`,
+          name: res.data.name ?? "",
+          asin: res.data.asin ?? "",
+          rank: "",
+          note: "",
+        },
+      ]);
+      setPasteUrl("");
+    } finally {
+      setParsing(false);
+    }
+  };
 
   const inputCls =
     "w-full rounded-lg border border-ink/15 bg-white px-2 py-1.5 text-sm text-ink placeholder:text-ink/35";
@@ -332,6 +367,26 @@ export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDi
               </div>
               <p className="text-sm font-medium text-ink">{d.candidateTitle}</p>
               <p className="mt-1 text-xs text-ink/60">{d.candidateHint}</p>
+              <div className="mt-3 flex gap-2">
+                <input
+                  className={inputCls}
+                  value={pasteUrl}
+                  onChange={(e) => setPasteUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addFromUrl();
+                  }}
+                  placeholder={d.pasteUrlPlaceholder}
+                />
+                <button
+                  type="button"
+                  onClick={addFromUrl}
+                  disabled={parsing || !pasteUrl.trim()}
+                  className="shrink-0 rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+                >
+                  {d.addFromUrl}
+                </button>
+              </div>
+              {parseError && <p className="mt-1 text-xs text-red-600">{parseError}</p>}
               <div className="mt-3 overflow-x-auto rounded-xl border border-ink/10">
                 <table className="w-full min-w-[640px] text-sm">
                   <thead>

@@ -28,6 +28,9 @@ export interface AmazonManualGuideDict {
   candidateTitle: string;
   candidateHint: string;
   scanCountryLabel: string;
+  pasteUrlPlaceholder: string;
+  addFromUrl: string;
+  parseUrlNoAsin: string;
   colName: string;
   colAsin: string;
   colRank: string;
@@ -71,6 +74,9 @@ export const zh: AmazonManualGuideDict = {
   candidateTitle: "候选清单",
   candidateHint: "扫榜时把有潜力的产品记下来，目标 20 个。数据先粗记，后面 Keepa 验证时再细化。",
   scanCountryLabel: "榜单站点",
+  pasteUrlPlaceholder: "粘贴 Amazon 产品链接，自动填产品名和 ASIN（类目排名需手填）",
+  addFromUrl: "从链接添加",
+  parseUrlNoAsin: "链接里没找到 ASIN，请确认是 Amazon 产品页链接",
   colName: "产品名",
   colAsin: "ASIN",
   colRank: "类目排名",
@@ -233,6 +239,9 @@ export const en: AmazonManualGuideDict = {
   candidateTitle: "Candidate list",
   candidateHint: "Jot down promising products while scanning. Aim for 20 — record roughly now, refine during Keepa validation.",
   scanCountryLabel: "Ranking site",
+  pasteUrlPlaceholder: "Paste an Amazon product link to auto-fill name and ASIN (rank needs manual entry)",
+  addFromUrl: "Add from link",
+  parseUrlNoAsin: "No ASIN found in the link — make sure it's an Amazon product page URL",
   colName: "Product",
   colAsin: "ASIN",
   colRank: "Category rank",

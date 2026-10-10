@@ -7,10 +7,12 @@
 import {
   runAmazonDiscovery,
   importAmazonProducts,
+  parseAmazonProductUrl,
   getTrafficThresholds,
   updateTrafficThresholds,
   type AmazonDiscoveryCriteria,
   type TrafficThresholds,
+  type ParsedAmazonUrl,
 } from "./ai";
 import type { AmazonScoredProduct } from "./amazon-types";
 
@@ -77,5 +79,16 @@ export async function saveTrafficThresholdsAction(
     return { ok: true, data };
   } catch (e) {
     return mapError(e, "保存阈值失败，请稍后重试。");
+  }
+}
+
+export async function parseAmazonProductUrlAction(
+  url: string
+): Promise<AmazonActionResult<ParsedAmazonUrl>> {
+  try {
+    const data = await parseAmazonProductUrl(url);
+    return { ok: true, data };
+  } catch (e) {
+    return mapError(e, "链接解析失败，请检查链接后重试。");
   }
 }
