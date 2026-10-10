@@ -1,6 +1,6 @@
 -- 否定清单（批次5追加）：用户维护的"别碰名单"
 CREATE TABLE "denylist_entries" (
-  "id" TEXT NOT NULL,
+  "id" UUID NOT NULL,
   "tenant_id" UUID NOT NULL,
   "type" VARCHAR(16) NOT NULL,
   "value" VARCHAR(256) NOT NULL,

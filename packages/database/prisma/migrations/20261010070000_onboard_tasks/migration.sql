@@ -1,6 +1,6 @@
 -- 新手任务（第十二批）："7 天跑起来"
 CREATE TABLE "onboard_tasks" (
-  "id" TEXT NOT NULL,
+  "id" UUID NOT NULL,
   "tenant_id" UUID NOT NULL,
   "day" INTEGER NOT NULL,
   "task_key" VARCHAR(64) NOT NULL,

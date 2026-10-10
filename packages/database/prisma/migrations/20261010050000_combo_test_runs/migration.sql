@@ -1,6 +1,6 @@
 -- 组合测试（第九批）：一次测 5-10 个品
 CREATE TABLE "combo_test_runs" (
-  "id" TEXT NOT NULL,
+  "id" UUID NOT NULL,
   "tenant_id" UUID NOT NULL,
   "name" VARCHAR(200) NOT NULL,
   "html_content" TEXT,
