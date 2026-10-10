@@ -14,6 +14,7 @@ const LS_CHECKS = "adlinklab-manual-guide-checks";
 const LS_CATS = "adlinklab-manual-guide-cats";
 const LS_CANDIDATES = "adlinklab-manual-guide-candidates";
 const LS_COUNTRY = "adlinklab-manual-guide-country";
+const LS_KEEPA_CHECKED = "adlinklab-manual-guide-keepa-checked";
 
 // 扫榜三榜单路径（与 scan 步骤 checklist 前三项一一对应）
 const SCAN_PATHS = ["/Best-Sellers/zgbs", "/gp/movers-and-shakers", "/gp/new-releases"];
@@ -410,6 +411,7 @@ export function AmazonManualGuideClient({
   const [pasteUrl, setPasteUrl] = useState("");
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState("");
+  const [keepaChecked, setKeepaChecked] = useState<string[]>([]);
   const [open, setOpen] = useState<Record<string, boolean>>({ categories: true });
   const [ready, setReady] = useState(false);
 
@@ -418,6 +420,7 @@ export function AmazonManualGuideClient({
     setCats(loadJson<string[]>(LS_CATS, []));
     setCandidates(loadJson<CandidateRow[]>(LS_CANDIDATES, []));
     setCountry(loadJson(LS_COUNTRY, "US"));
+    setKeepaChecked(loadJson<string[]>(LS_KEEPA_CHECKED, []));
     setReady(true);
   }, []);
 
@@ -433,6 +436,16 @@ export function AmazonManualGuideClient({
   useEffect(() => {
     if (ready) localStorage.setItem(LS_COUNTRY, JSON.stringify(country));
   }, [country, ready]);
+  useEffect(() => {
+    if (ready) localStorage.setItem(LS_KEEPA_CHECKED, JSON.stringify(keepaChecked));
+  }, [keepaChecked, ready]);
+
+  const dpUrl = (asin: string) => {
+    const clean = asin.trim().toUpperCase();
+    if (!clean) return null;
+    const domain = AMAZON_DOMAINS[country] ?? AMAZON_DOMAINS.US;
+    return `https://${domain}/dp/${clean}`;
+  };
 
   const scanLinks = useMemo(() => {
     const domain = AMAZON_DOMAINS[country] ?? AMAZON_DOMAINS.US;
@@ -484,6 +497,11 @@ export function AmazonManualGuideClient({
       }
       if (!res.data.asin) {
         setParseError(d.parseUrlNoAsin);
+        return;
+      }
+      const asinUpper = res.data.asin.trim().toUpperCase();
+      if (candidates.some((r) => r.asin.trim().toUpperCase() === asinUpper)) {
+        setParseError(d.duplicateAsin);
         return;
       }
       setCandidates((prev) => [
@@ -632,6 +650,7 @@ export function AmazonManualGuideClient({
                 <table className="w-full min-w-[640px] text-sm">
                   <thead>
                     <tr className="bg-ink/[0.04] text-left text-xs text-ink/60">
+                      <th className="px-3 py-2 font-medium">{d.colNo}</th>
                       <th className="px-3 py-2 font-medium">{d.colName}</th>
                       <th className="px-3 py-2 font-medium">{d.colAsin}</th>
                       <th className="px-3 py-2 font-medium">{d.colRank}</th>
@@ -640,8 +659,11 @@ export function AmazonManualGuideClient({
                     </tr>
                   </thead>
                   <tbody>
-                    {candidates.map((r) => (
+                    {candidates.map((r, ri) => {
+                      const link = dpUrl(r.asin);
+                      return (
                       <tr key={r.id} className="border-t border-ink/10">
+                        <td className="px-3 py-2 text-xs text-ink/50">{ri + 1}</td>
                         <td className="px-3 py-2">
                           <input
                             className={inputCls}
@@ -675,16 +697,29 @@ export function AmazonManualGuideClient({
                           />
                         </td>
                         <td className="px-3 py-2">
-                          <button
-                            type="button"
-                            onClick={() => removeRow(r.id)}
-                            className="rounded-lg border border-red-200 px-2 py-1 text-xs text-red-600 transition hover:bg-red-50"
-                          >
-                            {d.removeRow}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            {link && (
+                              <a
+                                href={link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="shrink-0 rounded-lg border border-ink/15 px-2 py-1 text-xs text-sky-700 transition hover:bg-ink/5"
+                              >
+                                {d.viewProduct} ↗
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => removeRow(r.id)}
+                              className="shrink-0 rounded-lg border border-red-200 px-2 py-1 text-xs text-red-600 transition hover:bg-red-50"
+                            >
+                              {d.removeRow}
+                            </button>
+                          </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
                 {candidates.length === 0 && (
@@ -714,6 +749,57 @@ export function AmazonManualGuideClient({
                   )
                 }
               />
+              {candidates.length > 0 && (
+                <div className="rounded-xl border border-ink/10 bg-white p-4">
+                  <p className="text-sm font-semibold text-ink">{d.keepaManualTitle}</p>
+                  <p className="mt-1 text-xs leading-5 text-ink/60">{d.keepaManualHint}</p>
+                  <p className="mt-2 text-xs text-ink/60">
+                    {d.keepaManualProgress
+                      .replace("{done}", String(keepaChecked.filter((id) => candidates.some((r) => r.id === id)).length))
+                      .replace("{total}", String(candidates.length))}
+                  </p>
+                  <ul className="mt-2 space-y-1.5">
+                    {candidates.map((r, i) => {
+                      const link = dpUrl(r.asin);
+                      const checked = keepaChecked.includes(r.id);
+                      return (
+                        <li
+                          key={r.id}
+                          className="flex items-center gap-2.5 rounded-lg border border-ink/10 px-3 py-2 text-sm"
+                        >
+                          <span className="w-6 shrink-0 text-xs text-ink/50">{i + 1}</span>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) =>
+                              setKeepaChecked((prev) =>
+                                e.target.checked
+                                  ? [...prev, r.id]
+                                  : prev.filter((id) => id !== r.id)
+                              )
+                            }
+                            className="h-4 w-4 shrink-0 accent-emerald-600"
+                          />
+                          <span className={`flex-1 truncate ${checked ? "text-ink/45 line-through" : "text-ink/85"}`}>
+                            {r.name || d.unnamedProduct}
+                            {r.asin && <span className="ml-2 text-xs text-ink/45">{r.asin.trim().toUpperCase()}</span>}
+                          </span>
+                          {link && (
+                            <a
+                              href={link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="shrink-0 rounded-lg border border-ink/15 px-2 py-1 text-xs text-sky-700 transition hover:bg-ink/5"
+                            >
+                              {d.viewProduct} ↗
+                            </a>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
               <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
                 <p className="text-sm font-semibold text-emerald-900">{d.keepaPassTitle}</p>

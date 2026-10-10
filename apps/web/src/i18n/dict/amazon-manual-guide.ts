@@ -36,6 +36,13 @@ export interface AmazonManualGuideDict {
   colRank: string;
   colNote: string;
   colAction: string;
+  colNo: string;
+  viewProduct: string;
+  duplicateAsin: string;
+  unnamedProduct: string;
+  keepaManualTitle: string;
+  keepaManualHint: string;
+  keepaManualProgress: string; // "已核查 {done}/{total}"
   addRow: string;
   removeRow: string;
   namePlaceholder: string;
@@ -103,6 +110,13 @@ export const zh: AmazonManualGuideDict = {
   colRank: "类目排名",
   colNote: "备注",
   colAction: "操作",
+  colNo: "#",
+  viewProduct: "查看",
+  duplicateAsin: "该 ASIN 已在候选清单中",
+  unnamedProduct: "未命名产品",
+  keepaManualTitle: "手动逐个核查",
+  keepaManualHint: "点「查看」去亚马逊看 Keepa 曲线，查完打勾，就不会搞混哪个查过了",
+  keepaManualProgress: "已核查 {done}/{total}",
   addRow: "添加一行",
   removeRow: "删除",
   namePlaceholder: "如：降噪蓝牙耳机",
@@ -301,6 +315,13 @@ export const en: AmazonManualGuideDict = {
   colRank: "Category rank",
   colNote: "Note",
   colAction: "Action",
+  colNo: "#",
+  viewProduct: "View",
+  duplicateAsin: "This ASIN is already in the candidate list",
+  unnamedProduct: "Unnamed product",
+  keepaManualTitle: "Manual check",
+  keepaManualHint: "Open each product on Amazon to check its Keepa chart, then tick it off",
+  keepaManualProgress: "Checked {done}/{total}",
   addRow: "Add row",
   removeRow: "Delete",
   namePlaceholder: "e.g. noise-cancelling earbuds",
