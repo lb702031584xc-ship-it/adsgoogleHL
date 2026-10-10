@@ -13,6 +13,7 @@ import { fetchPageHtml } from "../ai/fetch-page.js";
 import {
   detectOfficialSite,
   extractDdgTargetDomain,
+  isMarketplaceDomain,
 } from "./official-site.js";
 
 const mockFetchPageHtml = vi.mocked(fetchPageHtml);
@@ -178,5 +179,33 @@ describe("detectOfficialSite", () => {
     const info = await detectOfficialSite("Anker", ddgFetch(ANKER_HTML));
     expect(info.found).toBe(true); // high 降级 medium
     expect(info.confidence).toBe("medium");
+  });
+});
+
+describe("isMarketplaceDomain", () => {
+  it("amazon 各国后缀/子域名 → true", () => {
+    expect(isMarketplaceDomain("amazon.com")).toBe(true);
+    expect(isMarketplaceDomain("www.amazon.co.uk")).toBe(true);
+    expect(isMarketplaceDomain("https://www.amazon.com/dp/xyz")).toBe(true);
+    expect(isMarketplaceDomain("AMAZON.DE")).toBe(true);
+    expect(isMarketplaceDomain("smile.amazon.com")).toBe(true);
+  });
+  it("ebay/walmart/etsy 等平台 → true", () => {
+    expect(isMarketplaceDomain("ebay.com")).toBe(true);
+    expect(isMarketplaceDomain("walmart.com")).toBe(true);
+    expect(isMarketplaceDomain("aliexpress.com")).toBe(true);
+    expect(isMarketplaceDomain("temu.com")).toBe(true);
+  });
+  it("品牌官网/普通商家 → false", () => {
+    expect(isMarketplaceDomain("anker.com")).toBe(false);
+    expect(isMarketplaceDomain("yeahpromos.com")).toBe(false);
+    expect(isMarketplaceDomain("nike.com")).toBe(false);
+  });
+  it("含平台名的普通域名不误伤 → false", () => {
+    expect(isMarketplaceDomain("myamazonstore.com")).toBe(false);
+    expect(isMarketplaceDomain("ebaydeals.net")).toBe(false);
+  });
+  it("空字符串 → false", () => {
+    expect(isMarketplaceDomain("")).toBe(false);
   });
 });

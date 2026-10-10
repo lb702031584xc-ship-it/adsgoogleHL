@@ -14,6 +14,10 @@
  *  3. POLICY_RISK: latest OfferRiskScore.policyScore converted to risk
  *     (risk = 100 - policyScore; higher score = safer) >= maxPolicyRisk.
  *  4. MERCHANT_TERMINATED: offer.merchant.status = TERMINATED.
+ *  5. TEST_STOPLOSS_CAP: estimated spend >= testSpendCap（测试止损：花费上限）。
+ *  6. TEST_STOPLOSS_ZERO_CONV: estimated spend >= testZeroConvSpend AND
+ *     conversions == 0（测试止损：X 花费零转化）。
+ * 花费 = 真实点击数 × ProfitModel base CPC（沿用既有口径，无真实花费表）。
  */
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@adlinklab/database";
@@ -22,7 +26,9 @@ export type KillSwitchTriggerType =
   | "SPEND_PROFIT"
   | "CVR_FLOOR"
   | "POLICY_RISK"
-  | "MERCHANT_TERMINATED";
+  | "MERCHANT_TERMINATED"
+  | "TEST_STOPLOSS_CAP"
+  | "TEST_STOPLOSS_ZERO_CONV";
 
 export interface KillSwitchTrigger {
   type: KillSwitchTriggerType;
@@ -143,6 +149,8 @@ export async function evaluateKillSwitch(
     minCvr: unknown;
     maxPolicyRisk: unknown;
     pauseOnMerchantTerminated: boolean;
+    testSpendCap: unknown;
+    testZeroConvSpend: unknown;
   } | null;
 
   const evaluation: KillSwitchEvaluation = {
@@ -283,7 +291,85 @@ export async function evaluateKillSwitch(
     });
   }
 
+  // ---- (5) Test stop-loss（第七批） ---------------------------------------
+  // 花费口径沿用 (1)：真实点击数 × ProfitModel base CPC。
+  const testSpendCap = toNumber(config.testSpendCap);
+  const testZeroConvSpend = toNumber(config.testZeroConvSpend);
+  if (testSpendCap === null && testZeroConvSpend === null) {
+    skip("TEST_STOPLOSS:config-thresholds-unset");
+  } else {
+    const snap = await getTestSpendSnapshot(prisma, tenantId, offerId);
+    if (!snap) {
+      skip("TEST_STOPLOSS:missing-clicks-or-profit-model");
+    } else {
+      if (testSpendCap !== null && snap.spend >= testSpendCap) {
+        pushTrigger({
+          type: "TEST_STOPLOSS_CAP",
+          message: `测试止损：预估花费 $${snap.spend.toFixed(2)} ≥ 上限 $${testSpendCap.toFixed(2)}（点击 ${snap.clicks}）`,
+          snapshot: {
+            spend: snap.spend,
+            clicks: snap.clicks,
+            conversions: snap.conversions,
+            testSpendCap,
+          },
+        });
+      }
+      if (
+        testZeroConvSpend !== null &&
+        snap.spend >= testZeroConvSpend &&
+        snap.conversions === 0
+      ) {
+        pushTrigger({
+          type: "TEST_STOPLOSS_ZERO_CONV",
+          message: `测试止损：花费 $${snap.spend.toFixed(2)} ≥ $${testZeroConvSpend.toFixed(2)} 且 0 转化`,
+          snapshot: {
+            spend: snap.spend,
+            clicks: snap.clicks,
+            conversions: snap.conversions,
+            testZeroConvSpend,
+          },
+        });
+      }
+    }
+  }
+
   return evaluation;
+}
+
+/**
+ * 测试止损用花费快照（第七批，导出给监控 API 复用）：
+ * 花费 = 真实点击数 × ProfitModel base CPC；同时返回转化数。
+ * 缺数据（无点击或无 profit model）→ null。
+ */
+export async function getTestSpendSnapshot(
+  prisma: PrismaClient,
+  tenantId: string,
+  offerId: string
+): Promise<{ spend: number; clicks: number; conversions: number } | null> {
+  const [clicks, conversions, model] = (await Promise.all([
+    prisma.click.count({
+      where: { tenantId, offerId, isTest: { not: true } },
+    }),
+    prisma.conversion.count({
+      where: {
+        tenantId,
+        deletedAt: null,
+        click: { offerId, isTest: { not: true } },
+      },
+    }),
+    prisma.profitModel.findFirst({
+      where: { tenantId, offerId, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+    }),
+  ])) as [number, number, { commission: unknown; expectedCvr: unknown; approvalRate: unknown; attributionRate: unknown; refundRate: unknown; scenarios: unknown } | null];
+  if (clicks <= 0 || !model) return null;
+  const inputs = readProfitInputs(model);
+  if (!inputs) return null;
+  return {
+    spend: Math.round(clicks * inputs.baseCpc * 100) / 100,
+    clicks,
+    conversions,
+  };
 }
 
 export interface ExecuteKillSwitchOptions {

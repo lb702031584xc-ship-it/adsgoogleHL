@@ -29,7 +29,8 @@ export type SyncJobType =
   | "cashbackTermsWatch"
   | "cashbackLpScore"
   | "cashbackRedirectCheck"
-  | "cashbackRateCompare";
+  | "cashbackRateCompare"
+  | "asinWatch";
 
 export interface PaginationInput {
   page?: number;

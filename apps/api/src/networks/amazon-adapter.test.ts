@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseAmazonCredentials,
   parseSearchItemsResponse,
+  parseGetItemsResponse,
   scoreAmazonProduct,
   signPaApiRequest,
 } from "./amazon-adapter.js";
@@ -138,5 +139,39 @@ describe("amazon-adapter", () => {
     expect(auth).toContain("AWS4-HMAC-SHA256");
     expect(auth).toContain("AKIAIOSFODNN7EXAMPLE");
     expect(auth).toContain("Signature=");
+  });
+});
+
+describe("amazon-adapter GetItems（第十批）", () => {
+  it("parses GetItems response（ItemsResult.Items）", () => {
+    const data = {
+      ItemsResult: {
+        Items: [
+          {
+            ASIN: "B08N5WRWNW",
+            DetailPageURL: "https://www.amazon.com/dp/B08N5WRWNW",
+            ItemInfo: {
+              Title: { DisplayValue: "Test Product" },
+              ByLineInfo: { Brand: { DisplayValue: "TestBrand" } },
+            },
+            Offers: {
+              Listings: [{ Price: { Amount: 49.99, Currency: "USD" } }],
+            },
+            CustomerReviews: { StarRating: { Value: 4.2 }, Count: 1800 },
+          },
+        ],
+      },
+    };
+    const products = parseGetItemsResponse(data);
+    expect(products).toHaveLength(1);
+    expect(products[0]!.asin).toBe("B08N5WRWNW");
+    expect(products[0]!.rating).toBe(4.2);
+    expect(products[0]!.reviewCount).toBe(1800);
+    expect(products[0]!.brand).toBe("TestBrand");
+  });
+
+  it("returns [] for missing ItemsResult", () => {
+    expect(parseGetItemsResponse({})).toEqual([]);
+    expect(parseGetItemsResponse({ ItemsResult: {} })).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 
 import { describe, expect, it } from "vitest";
-import { analyzeProfit } from "./profitability.js";
+import { analyzeProfit, computeClickProfit } from "./profitability.js";
 
 describe("analyzeProfit", () => {
   it("computes bid suggestions from fixed commission", () => {
@@ -39,5 +39,55 @@ describe("analyzeProfit", () => {
     expect(r.scenarios[0].verdict).toBe("loss");
     // At 4% CVR: revenue = 40, cost = 14 → profit
     expect(r.scenarios[2].verdict).toBe("profit");
+  });
+});
+
+describe("computeClickProfit（第十一批）", () => {
+  it("正常：price 100 × 4% × cvr 2% → breakEven 0.08，推荐 0.056", () => {
+    const r = computeClickProfit({ price: 100, commissionRate: 0.04, cvr: 0.02 });
+    expect(r.viable).toBe(true);
+    expect(r.commissionPerSale).toBe(4);
+    expect(r.breakEvenCpc).toBe(0.08);
+    // 0.08×0.7=0.056 → round2 = 0.06
+    expect(r.recommendedBid).toBe(0.06);
+    // 期望盈亏 = 4×0.02 − 0.06 = 0.02
+    expect(r.expectedProfitPerClick).toBeCloseTo(0.02, 3);
+    expect(r.note).toBeNull();
+  });
+
+  it("固定佣金优先：fixedCommission 10", () => {
+    const r = computeClickProfit({ price: 100, commissionRate: 0.04, fixedCommission: 10, cvr: 0.02 });
+    expect(r.commissionPerSale).toBe(10);
+    expect(r.breakEvenCpc).toBe(0.2);
+    expect(r.recommendedBid).toBe(0.14);
+  });
+
+  it("零佣金 → 推荐出价 0 + 数学上不可投", () => {
+    const r = computeClickProfit({ price: 100, commissionRate: 0, cvr: 0.02 });
+    expect(r.viable).toBe(false);
+    expect(r.recommendedBid).toBe(0);
+    expect(r.note).toContain("不可投");
+  });
+
+  it("零转化率 → 推荐出价 0 + 数学上不可投", () => {
+    const r = computeClickProfit({ price: 100, commissionRate: 0.04, cvr: 0 });
+    expect(r.viable).toBe(false);
+    expect(r.recommendedBid).toBe(0);
+    expect(r.note).toContain("不可投");
+  });
+
+  it("实际 CPC：cpc 0.05 时期望盈亏 = 0.08 − 0.05 = 0.03", () => {
+    const r = computeClickProfit({ price: 100, commissionRate: 0.04, cvr: 0.02, cpc: 0.05 });
+    expect(r.expectedProfitPerClickAtCpc).toBeCloseTo(0.03, 3);
+  });
+
+  it("缺 cpc → expectedProfitPerClickAtCpc 为 null", () => {
+    const r = computeClickProfit({ price: 100, commissionRate: 0.04, cvr: 0.02 });
+    expect(r.expectedProfitPerClickAtCpc).toBeNull();
+  });
+
+  it("默认 cvr 2%：不传 cvr 时", () => {
+    const r = computeClickProfit({ price: 50, commissionRate: 0.04 });
+    expect(r.breakEvenCpc).toBe(0.04); // 2 × 0.02
   });
 });

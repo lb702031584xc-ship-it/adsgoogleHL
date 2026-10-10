@@ -4,6 +4,9 @@
  * 功能2 — 自动化广告页面：粘贴 URL → 生成预览 → 确认排队 → Script/文案包。
  */
 import { useEffect, useState } from "react";
+import { coachCheckAction, type CoachFinding } from "@/lib/api/coach-actions";
+import { CoachGate, hasCoachBlock } from "@/components/coach/coach-gate";
+import { zh as coachZh, en as coachEn } from "@/i18n/dict/coach";
 import { EntityPageHeader } from "@/components/entities/ui";
 import { DataQualityBadge } from "@/components/data-quality-badge";
 import type { AdsAutoDict } from "@/i18n/dict/ads-auto";
@@ -129,7 +132,7 @@ function PlanPreview({ plan, d }: { plan: AdPlan; d: AdsAutoDict }) {
   );
 }
 
-export function AdsAutoClient({ dict }: { dict: AdsAutoDict }) {
+export function AdsAutoClient({ dict, lang }: { dict: AdsAutoDict; lang: "zh" | "en" }) {
   const d = dict;
   const [urlsText, setUrlsText] = useState("");
   const [language, setLanguage] = useState<"zh" | "en">("en");
@@ -146,6 +149,10 @@ export function AdsAutoClient({ dict }: { dict: AdsAutoDict }) {
   const [confirming, setConfirming] = useState(false);
   const [busyPack, setBusyPack] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 教练模式（第十三批）
+  const [brandTermsText, setBrandTermsText] = useState("");
+  const [coachFindings, setCoachFindings] = useState<CoachFinding[]>([]);
+  const [coachConfirmed, setCoachConfirmed] = useState(false);
 
   useEffect(() => {
     listGoogleAccountsAction().then((res) => {
@@ -169,6 +176,21 @@ export function AdsAutoClient({ dict }: { dict: AdsAutoDict }) {
       .slice(0, 5);
   }
 
+  async function runPlanCoachCheck(p: AdPlan, brandText: string) {
+    const keywords = p.adGroups.flatMap((b) => b.group.keywords.map((k) => k.text));
+    const brandTerms = brandText
+      .split(/[,，\n]/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const dailyBudget = p.campaign?.dailyBudget?.amount ?? null;
+    const r = await coachCheckAction({
+      keywords,
+      brandTerms: brandTerms.length > 0 ? brandTerms : undefined,
+      dailyBudget: dailyBudget ?? undefined,
+    });
+    if (r.ok) setCoachFindings(r.data.findings);
+  }
+
   async function onGenerate() {
     const urls = parseUrls();
     if (urls.length === 0) {
@@ -185,8 +207,11 @@ export function AdsAutoClient({ dict }: { dict: AdsAutoDict }) {
         language,
         googleAccountId: googleAccountId.trim() || undefined,
       });
-      if (res.ok) setPlan(res.data.plan);
-      else setError(res.error);
+      if (res.ok) {
+        setPlan(res.data.plan);
+        setCoachConfirmed(false);
+        void runPlanCoachCheck(res.data.plan, brandTermsText);
+      } else setError(res.error);
     } finally {
       setGenerating(false);
     }
@@ -423,11 +448,41 @@ export function AdsAutoClient({ dict }: { dict: AdsAutoDict }) {
           <div className={`mt-4 ${cardClass}`}>
             <h3 className="text-sm font-semibold text-ink">{d.confirm.title}</h3>
             <p className="mt-1 text-sm text-ink/65">{d.confirm.description}</p>
+            <div className="mt-3">
+              <label className={labelClass}>品牌词（逗号分隔，可选：用于拦截竞价品牌词）</label>
+              <div className="flex gap-2">
+                <input
+                  value={brandTermsText}
+                  onChange={(e) => setBrandTermsText(e.target.value)}
+                  placeholder="如：anker, 安克"
+                  className={`${inputClass} max-w-xs`}
+                />
+                <button
+                  type="button"
+                  onClick={() => plan && void runPlanCoachCheck(plan, brandTermsText)}
+                  className="rounded-lg border border-ink/15 px-3 py-2 text-sm text-ink/70 hover:bg-ink/5"
+                >
+                  检查
+                </button>
+              </div>
+            </div>
+            <div className="mt-3">
+              <CoachGate
+                dict={lang === "en" ? coachEn : coachZh}
+                findings={coachConfirmed ? [] : coachFindings}
+                onConfirm={() => setCoachConfirmed(true)}
+                onCancel={() => setCoachFindings([])}
+              />
+            </div>
             {!confirm ? (
               <button
                 type="button"
                 onClick={onConfirm}
-                disabled={confirming}
+                disabled={
+                  confirming ||
+                  (hasCoachBlock(coachFindings) && !coachConfirmed) ||
+                  (coachFindings.some((f) => f.kind === "confirm") && !coachConfirmed)
+                }
                 className="mt-3 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper disabled:opacity-50"
               >
                 {confirming ? d.confirm.confirming : d.confirm.button}

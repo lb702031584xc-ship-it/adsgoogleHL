@@ -20,6 +20,8 @@ export interface AmazonScoredProduct {
   brand?: string | null;
   /** 流量需求门判定结果（后端可选字段，缺失时 UI 不展示该行） */
   trafficGate?: TrafficGate | null;
+  /** 机会品（第八批）：机会品模式检出，pipeline 指数 +10 */
+  opportunity?: boolean;
 }
 
 /**
@@ -29,7 +31,7 @@ export interface AmazonScoredProduct {
  * 绝不许把相对热度写成绝对流量。
  */
 export interface TrafficGateSignal {
-  source: "trends" | "similarweb" | "dataforseo";
+  source: "trends" | "similarweb" | "dataforseo" | "manual";
   label: string;
   value: number | null;
   threshold: number | null;
@@ -41,6 +43,8 @@ export interface TrafficGateOfficialSite {
   found: boolean;
   domain: string | null;
   confidence: "high" | "medium" | "low";
+  /** 补充说明：如"链接是电商平台，平台域名不视为品牌官网" */
+  reason?: string;
 }
 
 export interface TrafficGate {

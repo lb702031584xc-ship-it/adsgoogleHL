@@ -25,6 +25,7 @@ import type {
   CashbackLpScoreJobData,
   CashbackRedirectCheckJobData,
   CashbackRateCompareJobData,
+  AsinWatchJobData,
 } from "./job-data.js";
 import {
   parseBudgetPacerJobData,
@@ -41,6 +42,7 @@ import {
   parseCashbackLpScoreJobData,
   parseCashbackRedirectCheckJobData,
   parseCashbackRateCompareJobData,
+  parseAsinWatchJobData,
 } from "./job-data.js";
 import { getDefaultJobOptions } from "./producer.js";
 import { processBudgetPacerJob } from "./budget-pacer-worker.js";
@@ -54,6 +56,7 @@ import { processCashbackTermsWatchJob } from "./cashback-terms-watch-worker.js";
 import { processCashbackLpScoreJob } from "./cashback-lp-score-worker.js";
 import { processCashbackRedirectCheckJob } from "./cashback-redirect-check-worker.js";
 import { processCashbackRateCompareJob } from "./cashback-rate-compare-worker.js";
+import { processAsinWatchJob } from "./asin-watch-worker.js";
 import {
   NETWORK_PULL_JOB_NAME,
   NETWORK_PULL_REPEAT_PATTERN,
@@ -139,6 +142,7 @@ export interface WorkerRuntimeOptions {
     cashbackLpScore: (job: Job<CashbackLpScoreJobData>) => Promise<unknown>;
     cashbackRedirectCheck: (job: Job<CashbackRedirectCheckJobData>) => Promise<unknown>;
     cashbackRateCompare: (job: Job<CashbackRateCompareJobData>) => Promise<unknown>;
+    asinWatch: (job: Job<AsinWatchJobData>) => Promise<unknown>;
     connection: ConnectionOptions;
   }) => WorkerLike[];
   /** Graceful close wait (ms). BullMQ close waits for active jobs. */
@@ -282,6 +286,11 @@ export class WorkerRuntime {
           (job) => handlers.cashbackRateCompare(job),
           { connection: handlers.connection, concurrency: 1 }
         ),
+        new Worker<AsinWatchJobData>(
+          QUEUE_NAMES.asinWatch,
+          (job) => handlers.asinWatch(job),
+          { connection: handlers.connection, concurrency: 1 }
+        ),
       ]);
   }
 
@@ -362,6 +371,9 @@ export class WorkerRuntime {
       }
       if (queueName === QUEUE_NAMES.cashbackRateCompare) {
         return await this.handleCashbackRateCompareData(parseCashbackRateCompareJobData(data));
+      }
+      if (queueName === QUEUE_NAMES.asinWatch) {
+        return await this.handleAsinWatchData(parseAsinWatchJobData(data));
       }
       throw new WorkerJobError(
         "UNKNOWN_QUEUE",
@@ -514,6 +526,14 @@ export class WorkerRuntime {
         });
         return this.handleCashbackRateCompareData(job.data);
       },
+      asinWatch: async (job) => {
+        this.log.info("asinWatch job received", {
+          bullJobId: job.id,
+          triggeredBy: job.data.triggeredBy,
+          attemptsMade: job.attemptsMade,
+        });
+        return this.handleAsinWatchData(job.data);
+      },
     });
 
     // Hourly repeatable schedules (worker-owned; idempotent upsert by
@@ -533,6 +553,7 @@ export class WorkerRuntime {
       await this.ensureCashbackLpScoreSchedule();
       await this.ensureCashbackRedirectCheckSchedule();
       await this.ensureCashbackRateCompareSchedule();
+      await this.ensureAsinWatchSchedule();
     }
 
     this.status = "running";
@@ -826,6 +847,27 @@ export class WorkerRuntime {
   }
 
   /**
+   * Ensure the daily ASIN-watch snapshot schedule exists (03:00).
+   * Re-adding with the same name + repeat pattern upserts the definition.
+   */
+  private async ensureAsinWatchSchedule(): Promise<void> {
+    const queue = new Queue<AsinWatchJobData>(
+      QUEUE_NAMES.asinWatch,
+      { connection: this.connection }
+    );
+    this.schedulingQueues.push(queue);
+    await queue.add(
+      "asin-watch-daily",
+      { type: "asinWatch", triggeredBy: "schedule" },
+      {
+        repeat: { pattern: "0 3 * * *" },
+        ...getDefaultJobOptions("asinWatch"),
+      }
+    );
+    this.log.info("asinWatch daily schedule ensured");
+  }
+
+  /**
    * Automation pack: daily budget-pacer schedule.
    */
   private async ensureBudgetPacerSchedule(): Promise<void> {
@@ -1084,6 +1126,21 @@ export class WorkerRuntime {
       );
     }
     return processCashbackRedirectCheckJob({
+      prisma: this.deps.prisma,
+      triggeredBy: data.triggeredBy,
+      tenantId: data.tenantId,
+      log: this.log,
+    });
+  }
+
+  private async handleAsinWatchData(data: AsinWatchJobData) {
+    if (!this.deps.prisma) {
+      throw new WorkerJobError(
+        "NO_PRISMA",
+        "asinWatch worker requires prisma persistence"
+      );
+    }
+    return processAsinWatchJob({
       prisma: this.deps.prisma,
       triggeredBy: data.triggeredBy,
       tenantId: data.tenantId,

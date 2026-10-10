@@ -9,6 +9,15 @@ export interface AmazonDiscoveryDict {
   priceRangeLabel: string;
   minRatingLabel: string;
   minReviewsLabel: string;
+  opportunityTitle: string;
+  opportunityDesc: string;
+  opportunityMinReviewsLabel: string;
+  opportunityRatingRangeLabel: string;
+  opportunityBadge: string;
+  opportunityNote: string;
+  watch: string;
+  watching: string;
+  watched: string;
   regionLabel: string;
   discover: string;
   discovering: string;
@@ -33,6 +42,13 @@ export interface AmazonDiscoveryDict {
   gateNoData: string;
   thresholdLabel: string;
   signalCaption: string;
+  manualTitle: string;
+  manualBrandPlaceholder: string;
+  manualVisitsPlaceholder: string;
+  manualHint: string;
+  recheck: string;
+  rechecking: string;
+  manualInvalid: string;
   thresholdsTitle: string;
   thresholdsHint: string;
   officialSiteVisitsLabel: string;
@@ -44,6 +60,7 @@ export interface AmazonDiscoveryDict {
   thresholdsSaveFailed: string;
   expand: string;
   collapse: string;
+  sendToPipeline: string;
 }
 
 export const zh: AmazonDiscoveryDict = {
@@ -59,6 +76,16 @@ export const zh: AmazonDiscoveryDict = {
   priceRangeLabel: "价格区间（USD）",
   minRatingLabel: "最低评分",
   minReviewsLabel: "最低评论数",
+  opportunityTitle: "机会品模式",
+  opportunityDesc: "筛出评论数多但评分偏低的产品（高需求 + 低满意度），适合推高口碑替代品。",
+  opportunityMinReviewsLabel: "最低评论数（机会品）",
+  opportunityRatingRangeLabel: "评分区间（机会品）",
+  opportunityBadge: "高需求 + 低满意度",
+  opportunityNote:
+    "评分被拉低，适合推高口碑替代品。此为基于评分分布的推断，未读取评论原文。", 
+  watch: "跟踪",
+  watching: "跟踪中…",
+  watched: "已跟踪",
   regionLabel: "站点",
   discover: "开始选品",
   discovering: "抓取中…",
@@ -85,6 +112,14 @@ export const zh: AmazonDiscoveryDict = {
   thresholdLabel: "阈值",
   signalCaption:
     "数据口径：Google Trends = 热度（0-100 相对值，免费）· SimilarWeb = 月访问量（付费 key）· DataForSEO = 月搜索量（付费 key）",
+  manualTitle: "手动输入流量值",
+  manualBrandPlaceholder: "品牌名（可选），如：Anker；亚马逊商品页可填品牌名查品牌官网",
+  manualVisitsPlaceholder: "手动输入月访问量（可选），如：80000（正整数）",
+  manualHint:
+    "数字来源建议去 SimilarWeb 免费版查该品牌官网；这是你手动提供的值，只对比“官网月访问量”阈值这一档，绝不记作实测流量。",
+  recheck: "用该值重判",
+  rechecking: "重判中…",
+  manualInvalid: "请至少填写品牌名或有效的手动月访问量（正整数，≤ 1e12）。",
   thresholdsTitle: "流量门阈值",
   thresholdsHint:
     "免费自动：Google Trends 热度、官网检测；付费 key：SimilarWeb 月访问量、DataForSEO 月搜索量，在“系统设置 → AI 设置”中配置。",
@@ -97,6 +132,7 @@ export const zh: AmazonDiscoveryDict = {
   thresholdsSaveFailed: "保存失败，请检查输入后重试。",
   expand: "展开",
   collapse: "收起",
+  sendToPipeline: "送入流水线",
 };
 
 export const en: AmazonDiscoveryDict = {
@@ -112,6 +148,16 @@ export const en: AmazonDiscoveryDict = {
   priceRangeLabel: "Price range (USD)",
   minRatingLabel: "Min rating",
   minReviewsLabel: "Min reviews",
+  opportunityTitle: "Opportunity mode",
+  opportunityDesc: "Find products with many reviews but below-average ratings (high demand + low satisfaction) — ideal for a better-rated alternative.",
+  opportunityMinReviewsLabel: "Min reviews (opportunity)",
+  opportunityRatingRangeLabel: "Rating range (opportunity)",
+  opportunityBadge: "High demand + low satisfaction",
+  opportunityNote:
+    "Ratings are dragged down — a higher-quality alternative can win. This is an inference from the rating distribution, not a reading of actual reviews.", 
+  watch: "Track",
+  watching: "Tracking…",
+  watched: "Tracked",
   regionLabel: "Marketplace",
   discover: "Start Discovery",
   discovering: "Fetching…",
@@ -138,6 +184,14 @@ export const en: AmazonDiscoveryDict = {
   thresholdLabel: "Threshold",
   signalCaption:
     "Data sources: Google Trends = interest (0–100 relative, free) · SimilarWeb = monthly visits (paid key) · DataForSEO = monthly search volume (paid key)",
+  manualTitle: "Enter traffic manually",
+  manualBrandPlaceholder: "Brand name (optional), e.g. Anker — detects the brand's official site",
+  manualVisitsPlaceholder: "Manual monthly visits (optional), e.g. 80000 (positive integer)",
+  manualHint:
+    "Suggestion: look up the brand's official site on the free SimilarWeb plan. This is a value you provide manually; it is only compared against the official-site monthly-visits threshold and is never presented as measured traffic.",
+  recheck: "Re-evaluate with this value",
+  rechecking: "Re-evaluating…",
+  manualInvalid: "Please fill in a brand name or a valid manual monthly-visit number (positive integer, ≤ 1e12).",
   thresholdsTitle: "Traffic gate thresholds",
   thresholdsHint:
     "Free & automatic: Google Trends interest, official-site detection; paid keys: SimilarWeb monthly visits, DataForSEO monthly search volume — configure under Settings → AI settings.",
@@ -150,4 +204,5 @@ export const en: AmazonDiscoveryDict = {
   thresholdsSaveFailed: "Save failed, please check your input and retry.",
   expand: "Expand",
   collapse: "Collapse",
+  sendToPipeline: "Send to pipeline",
 };

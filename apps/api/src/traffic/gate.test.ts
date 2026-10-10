@@ -7,7 +7,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { PrismaClient } from "@adlinklab/database";
 
-vi.mock("./official-site.js", () => ({ detectOfficialSite: vi.fn() }));
+vi.mock("./official-site.js", async (importOriginal) => {
+  const orig =
+    await importOriginal<typeof import("./official-site.js")>();
+  // 只 mock 网络相关的 detectOfficialSite；isMarketplaceDomain 用真实实现。
+  return { ...orig, detectOfficialSite: vi.fn() };
+});
 vi.mock("./trends.js", () => ({ getKeywordInterest: vi.fn() }));
 vi.mock("./similarweb.js", () => ({ SimilarWebProvider: vi.fn() }));
 vi.mock("./dataforseo.js", () => ({ DataForSeoProvider: vi.fn() }));
@@ -105,7 +110,7 @@ describe("evaluateTrafficGate", () => {
 
   it("无 SimilarWeb key → Trends 品牌热度兜底（免费相对值，非访问量）", async () => {
     mockSwVisits(null);
-    mockTrends.mockResolvedValue(60);
+    mockTrends.mockResolvedValue({ value: 60, rateLimited: false });
     const res = await evaluateTrafficGate(baseInput());
     expect(res.passed).toBe(true);
     const t = res.signals.find((s) => s.source === "trends");
@@ -116,7 +121,7 @@ describe("evaluateTrafficGate", () => {
 
   it("判定信号无数据 → unknown（不直接 fail），reason 写清暂无数据", async () => {
     mockSwVisits(null);
-    mockTrends.mockResolvedValue(null);
+    mockTrends.mockResolvedValue({ value: null, rateLimited: false });
     const res = await evaluateTrafficGate(baseInput());
     expect(res.passed).toBe(null);
     expect(res.reason).toContain("暂无数据");
@@ -129,7 +134,7 @@ describe("evaluateTrafficGate", () => {
       domain: null,
       confidence: "low",
     });
-    mockTrends.mockResolvedValue(70);
+    mockTrends.mockResolvedValue({ value: 70, rateLimited: false });
     MockDf.mockImplementation(
       () =>
         ({
@@ -165,7 +170,7 @@ describe("evaluateTrafficGate", () => {
       domain: null,
       confidence: "low",
     });
-    mockTrends.mockResolvedValue(null);
+    mockTrends.mockResolvedValue({ value: null, rateLimited: false });
     const res = await evaluateTrafficGate(baseInput());
     expect(res.passed).toBe(null);
     expect(res.reason).toContain("暂无数据");
@@ -193,6 +198,117 @@ describe("evaluateTrafficGate", () => {
     );
     expect(res.officialSite?.domain).toBe("www.anker.com");
     expect(mockDetect).not.toHaveBeenCalled();
+  });
+
+
+  it("手动输入月访问量达标 → pass，以手动为准（不再 unknown）", async () => {
+    mockSwVisits(null);
+    mockTrends.mockResolvedValue({ value: null, rateLimited: true });
+    const res = await evaluateTrafficGate(
+      baseInput({ manualMonthlyVisits: 80000 })
+    );
+    expect(res.passed).toBe(true);
+    const m = res.signals.find((s) => s.source === "manual");
+    expect(m).toMatchObject({ value: 80000, threshold: 50000, passed: true });
+    expect(m?.label).toContain("手动输入");
+    expect(m?.label).toContain("非实测");
+    expect(res.reason).toContain("手动");
+    // 手动优先：Trends 不应被调用
+    expect(mockTrends).not.toHaveBeenCalled();
+  });
+
+  it("手动输入月访问量未达标 → fail", async () => {
+    const res = await evaluateTrafficGate(
+      baseInput({ manualMonthlyVisits: 10000 })
+    );
+    expect(res.passed).toBe(false);
+    expect(res.reason).toContain("未通过");
+    expect(res.signals.find((s) => s.source === "manual")?.passed).toBe(false);
+  });
+
+  it("手动输入非法值（0/负数/NaN）→ 被忽略，走原逻辑", async () => {
+    mockSwVisits(null);
+    mockTrends.mockResolvedValue({ value: null, rateLimited: false });
+    const res = await evaluateTrafficGate(baseInput({ manualMonthlyVisits: 0 }));
+    expect(res.signals.find((s) => s.source === "manual")).toBeUndefined();
+    expect(res.passed).toBe(null);
+  });
+
+  it("Trends 被限流 → unknown 的 reason 写明被限流（429）", async () => {
+    mockSwVisits(null);
+    mockTrends.mockResolvedValue({ value: null, rateLimited: true });
+    const res = await evaluateTrafficGate(baseInput());
+    expect(res.passed).toBe(null);
+    expect(res.reason).toContain("被限流");
+    expect(res.reason).toContain("429");
+  });
+
+
+  it("marketplace 域名（amazon.com）+ 有 brand → 对 brand 跑官网检测，用检出域名做流量门", async () => {
+    mockDetect.mockResolvedValue({
+      found: true,
+      domain: "anker.com",
+      confidence: "high",
+    });
+    mockSwVisits(90000);
+    const res = await evaluateTrafficGate(
+      baseInput({ brand: "Anker", title: "x", domain: "https://www.amazon.com/dp/xyz" })
+    );
+    // 官网检测必须用 brand 跑，而不是 amazon.com
+    expect(mockDetect).toHaveBeenCalled();
+    expect(res.officialSite?.found).toBe(true);
+    expect(res.officialSite?.domain).toBe("anker.com");
+    expect(res.officialSite?.reason).toContain("电商平台");
+    expect(res.signals.find((s) => s.source === "similarweb")?.passed).toBe(true);
+    expect(res.passed).toBe(true);
+  });
+
+  it("marketplace 域名 + 无 brand → unknown，reason 请补充品牌名，不硬 fail", async () => {
+    const res = await evaluateTrafficGate(
+      baseInput({ brand: null, title: "x", domain: "amazon.com", keywords: [] })
+    );
+    expect(res.officialSite?.found).toBe(false);
+    expect(res.officialSite?.reason).toContain("电商平台");
+    expect(res.officialSite?.reason).toContain("请补充品牌名");
+    expect(res.passed).toBe(null);
+    expect(res.reason).toContain("请补充品牌名");
+  });
+
+  it("marketplace 域名 + brand 但检测失败 → unknown，reason 写未能检出", async () => {
+    mockDetect.mockResolvedValue({ found: false, domain: null, confidence: "low" });
+    mockTrends.mockResolvedValue({ value: null, rateLimited: false });
+    const res = await evaluateTrafficGate(
+      baseInput({ brand: "Anker", title: "x", domain: "ebay.com", keywords: [] })
+    );
+    expect(res.officialSite?.found).toBe(false);
+    expect(res.officialSite?.reason).toContain("未能检出品牌官网");
+    expect(res.passed).toBe(null);
+  });
+
+  it("自动检测检出平台域名 → 防御性拒绝，不采信", async () => {
+    mockDetect.mockResolvedValue({
+      found: true,
+      domain: "amazon.com",
+      confidence: "high",
+    });
+    mockTrends.mockResolvedValue({ value: null, rateLimited: false });
+    const res = await evaluateTrafficGate(baseInput({ domain: null }));
+    expect(res.officialSite?.found).toBe(false);
+    expect(res.officialSite?.reason).toContain("电商平台");
+  });
+
+  it("普通商家域名直给 → 保持现有行为（视为官网，跳过检测）", async () => {
+    mockSwVisits(80000);
+    const res = await evaluateTrafficGate(
+      baseInput({ brand: null, title: "x", domain: "yeahpromos.com" })
+    );
+    expect(mockDetect).not.toHaveBeenCalled();
+    expect(res.officialSite).toMatchObject({
+      found: true,
+      domain: "yeahpromos.com",
+      confidence: "medium",
+    });
+    expect(res.passed).toBe(true);
   });
 
   it("内部异常 → unknown，不抛错", async () => {

@@ -203,3 +203,113 @@ export function analyzeProfit(
 
   return { commission, breakEvenCpc, assumedCvrPct: cvr, bids, scenarios, currency };
 }
+
+/* ------------------------------------------------------------------ */
+/* 第十一批：每次点击盈亏 + 推荐 CPC 出价                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Amazon US 类目佣金率静态估算表（by category）。
+ * 明确标注：估算值，实际以 Amazon Associates 类目政策为准；用户可手动覆盖。
+ * 键为英文类目 key；页面展示中英双语由 Web 字典负责。
+ */
+export const AMAZON_US_COMMISSION_RATES: Record<string, number> = {
+  electronics: 0.04, // 3C数码
+  home_kitchen: 0.045, // 家居厨房
+  fashion: 0.04, // 服装配饰
+  beauty: 0.045, // 美妆个护（Luxury Beauty 可达 10%，此处取保守值）
+  baby_toys: 0.045, // 母婴玩具
+  sports_outdoor: 0.045, // 运动户外
+  pet: 0.045, // 宠物用品
+  office: 0.045, // 办公用品
+  books: 0.045, // 图书
+  grocery: 0.045, // 食品杂货
+  automotive: 0.045, // 汽车用品
+  health: 0.045, // 健康个护
+};
+
+/** 默认佣金率（估算值）：4%。 */
+export const DEFAULT_AMAZON_COMMISSION_RATE = 0.04;
+
+export interface ClickProfitInput {
+  /** 商品价格（美元）。 */
+  price?: number | null;
+  /** 佣金率（0-1，如 0.04）。 */
+  commissionRate?: number | null;
+  /** 固定佣金（美元；优先于 price × commissionRate）。 */
+  fixedCommission?: number | null;
+  /** 预估转化率（0-1，默认 0.02；页面明确标注"预估"）。 */
+  cvr?: number | null;
+  /** 实际 CPC（美元，可选）：用于计算该出价下的期望盈亏。 */
+  cpc?: number | null;
+}
+
+export interface ClickProfit {
+  /** 单次转化佣金 = price × commissionRate（或 fixedCommission）。 */
+  commissionPerSale: number | null;
+  /** 盈亏平衡出价 = commissionPerSale × cvr。 */
+  breakEvenCpc: number | null;
+  /** 推荐出价 = breakEvenCpc × 0.7（留 30% 安全边际）。 */
+  recommendedBid: number | null;
+  /** 每次点击期望盈亏（按推荐出价）= commissionPerSale × cvr − recommendedBid。 */
+  expectedProfitPerClick: number | null;
+  /** 每次点击期望盈亏（按实际 CPC；未提供 cpc 时为 null）。 */
+  expectedProfitPerClickAtCpc: number | null;
+  /** 数学上是否可投（佣金>0 且 cvr>0）。 */
+  viable: boolean;
+  /** 不可投时的提示。 */
+  note: string | null;
+}
+
+/**
+ * 每次点击盈亏 + 推荐出价。
+ * 公式（透明）：
+ *   commissionPerSale = fixedCommission ?? price × commissionRate
+ *   breakEvenCpc      = commissionPerSale × cvr
+ *   recommendedBid    = breakEvenCpc × 0.7
+ *   expectedProfitPerClick = commissionPerSale × cvr − recommendedBid
+ * cvr=0 或佣金=0 → 推荐出价 0，并提示"数学上不可投"。
+ */
+export function computeClickProfit(input: ClickProfitInput): ClickProfit {
+  const price = finiteOrNull(input.price);
+  const rate = finiteOrNull(input.commissionRate);
+  const fixed = finiteOrNull(input.fixedCommission);
+  const cvr = input.cvr === undefined || input.cvr === null ? 0.02 : finiteOrNull(input.cvr);
+  const cpc = finiteOrNull(input.cpc);
+
+  const commissionPerSale =
+    fixed !== null && fixed > 0
+      ? fixed
+      : price !== null && rate !== null && price > 0 && rate > 0
+        ? round2(price * rate)
+        : null;
+
+  const viable =
+    commissionPerSale !== null && commissionPerSale > 0 && cvr !== null && cvr > 0;
+
+  if (!viable) {
+    return {
+      commissionPerSale,
+      breakEvenCpc: null,
+      recommendedBid: 0,
+      expectedProfitPerClick: null,
+      expectedProfitPerClickAtCpc: null,
+      viable: false,
+      note: "数学上不可投：佣金或预估转化率为 0",
+    };
+  }
+
+  const breakEvenCpc = round2(commissionPerSale * (cvr as number));
+  const recommendedBid = round2(breakEvenCpc * 0.7);
+  const expectedProfitPerClick = round2(commissionPerSale * (cvr as number) - recommendedBid);
+  return {
+    commissionPerSale,
+    breakEvenCpc,
+    recommendedBid,
+    expectedProfitPerClick,
+    expectedProfitPerClickAtCpc:
+      cpc !== null && cpc >= 0 ? round2(commissionPerSale * (cvr as number) - cpc) : null,
+    viable: true,
+    note: null,
+  };
+}

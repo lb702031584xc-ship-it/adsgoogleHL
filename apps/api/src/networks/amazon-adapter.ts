@@ -168,12 +168,8 @@ export interface AmazonProduct {
   brand: string | null;
 }
 
-/** 从 PA-API 响应提取产品列表 */
-export function parseSearchItemsResponse(data: unknown): AmazonProduct[] {
-  const items = (data as { SearchResult?: { Items?: unknown[] } })?.SearchResult
-    ?.Items;
-  if (!Array.isArray(items)) return [];
-  return items.map((it) => {
+/** PA-API 单品映射（SearchItems / GetItems 共用；PA-API 无 BSR 字段） */
+export function parsePaapiItem(it: unknown): AmazonProduct {
     const o = it as Record<string, unknown>;
     const offers = o.Offers as
       | { Listings?: Array<{ Price?: { Amount?: number; Currency?: string }; Availability?: { Message?: string }; DeliveryInfo?: { IsPrimeEligible?: boolean } }> }
@@ -207,7 +203,86 @@ export function parseSearchItemsResponse(data: unknown): AmazonProduct[] {
           ? brandRaw.trim()
           : null,
     };
+}
+
+/** 从 PA-API SearchItems 响应提取产品列表 */
+export function parseSearchItemsResponse(data: unknown): AmazonProduct[] {
+  const items = (data as { SearchResult?: { Items?: unknown[] } })?.SearchResult
+    ?.Items;
+  if (!Array.isArray(items)) return [];
+  return items.map((it) => parsePaapiItem(it));
+}
+
+/** 从 PA-API GetItems 响应提取产品列表 */
+export function parseGetItemsResponse(data: unknown): AmazonProduct[] {
+  const items = (data as { ItemsResult?: { Items?: unknown[] } })?.ItemsResult
+    ?.Items;
+  if (!Array.isArray(items)) return [];
+  return items.map((it) => parsePaapiItem(it));
+}
+
+/** 调用 PA-API GetItems（按 ASIN 批量查详情，最多 10 个/次） */
+export async function getAmazonItems(
+  creds: AmazonCredentials,
+  asins: string[],
+  fetchImpl: typeof fetch = fetch
+): Promise<AmazonProduct[]> {
+  const list = asins
+    .map((a) => a.replace(/[^A-Za-z0-9]/g, "").toUpperCase())
+    .filter(Boolean)
+    .slice(0, 10);
+  if (list.length === 0) return [];
+  const host = PA_API_HOSTS[creds.region || "US"];
+  const marketplace = PA_API_MARKETPLACES[creds.region || "US"];
+  const path = "/paapi5/getitems";
+  const url = `https://${host}${path}`;
+
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  const dateStamp = amzDate.slice(0, 8);
+
+  const payload = JSON.stringify({
+    ItemIds: list,
+    PartnerTag: creds.partnerTag,
+    PartnerType: "Associates",
+    Marketplace: marketplace,
+    Resources: [
+      "ItemInfo.Title",
+      "ItemInfo.ByLineInfo",
+      "Offers.Listings.Price",
+      "Offers.Listings.Availability",
+      "CustomerReviews.StarRating",
+      "CustomerReviews.Count",
+      "Images.Primary.Large",
+    ],
   });
+
+  const auth = signPaApiRequest(creds, "POST", path, payload, amzDate, dateStamp);
+
+  const res = await fetchImpl(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Encoding": "amz-1.0",
+      "X-Amz-Date": amzDate,
+      "X-Amz-Target":
+        "com.amazon.paapi5.v1.ProductAdvertisingAPIv1.GetItems",
+      Authorization: auth,
+    },
+    body: payload,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`PA-API 请求失败 (${res.status}): ${text.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  if ((data as { Errors?: unknown[] })?.Errors?.length) {
+    throw new Error(
+      `PA-API 错误: ${JSON.stringify((data as { Errors: unknown[] }).Errors).slice(0, 300)}`
+    );
+  }
+  return parseGetItemsResponse(data);
 }
 
 /** 调用 PA-API SearchItems */

@@ -13,8 +13,8 @@
  * unknown（暂无数据），绝不直接判 fail。
  */
 
-/** 信号数据源：免费（trends）/ 付费（similarweb、dataforseo） */
-export type TrafficSignalSource = "trends" | "similarweb" | "dataforseo";
+/** 信号数据源：免费（trends）/ 付费（similarweb、dataforseo）/ 用户手动输入（manual） */
+export type TrafficSignalSource = "trends" | "similarweb" | "dataforseo" | "manual";
 
 /** 单个流量信号 */
 export interface TrafficSignal {
@@ -38,6 +38,11 @@ export interface OfficialSiteInfo {
   found: boolean;
   domain: string | null;
   confidence: "high" | "medium" | "low";
+  /**
+   * 补充说明（可选）：例如"链接是电商平台，平台域名不视为品牌官网"。
+   * found=false 时解释原因，UI 可直接展示。
+   */
+  reason?: string;
 }
 
 /** 流量门评估结果 */

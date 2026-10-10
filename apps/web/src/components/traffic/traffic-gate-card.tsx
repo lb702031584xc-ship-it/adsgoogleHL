@@ -1,6 +1,11 @@
 "use client";
 
+import { useRef, useState } from "react";
 import type { TrafficGate } from "@/lib/api/amazon-types";
+import {
+  ocrScreenshotAction,
+  type OcrMetrics,
+} from "@/lib/api/traffic-actions";
 
 /**
  * 流量需求门卡片的文案字典（仅纯字符串，不许有函数）。
@@ -29,6 +34,40 @@ export interface TrafficGateCardDict {
   reason: string;
   /** 信号行"阈值"前缀 */
   thresholdLabel: string;
+  /** 手动区标题 */
+  manualTitle: string;
+  /** 品牌名输入框标签 */
+  manualBrandLabel: string;
+  /** 品牌名输入框 placeholder */
+  manualBrandPlaceholder: string;
+  /** 手动月访问量输入框标签 */
+  manualVisitsLabel: string;
+  /** 手动月访问量输入框 placeholder */
+  manualVisitsPlaceholder: string;
+  /** 手动区说明小字 */
+  manualHint: string;
+  /** 重新检测按钮 */
+  recheck: string;
+  /** 重新检测中 */
+  rechecking: string;
+  /** 手动输入校验错误 */
+  manualInvalid: string;
+  /** 截图识别按钮 */
+  ocrUpload: string;
+  /** 截图识别中 */
+  ocrUploading: string;
+  /** 截图识别说明 */
+  ocrHint: string;
+  /** 识别值标注 */
+  ocrReviewNote: string;
+  /** 识别失败 */
+  ocrFailed: string;
+}
+
+/** 手动重判输入：品牌名（可选）+ 手动月访问量（可选），至少填一个。 */
+export interface TrafficGateRecheckInput {
+  brand?: string;
+  manualMonthlyVisits?: number;
 }
 
 function badgeClass(passed: boolean | null): string {
@@ -83,11 +122,164 @@ export function TrafficGateCard({
   gate,
   loading,
   dict: d,
+  onRecheck,
+  recheckBusy,
 }: {
   gate: TrafficGate | null | undefined;
   loading: boolean;
   dict: TrafficGateCardDict;
+  /**
+   * 手动重判回调（品牌名/手动月访问量至少提供一个）。
+   * 不传则不显示手动区。
+   */
+  onRecheck?: (input: TrafficGateRecheckInput) => void;
+  recheckBusy?: boolean;
 }) {
+  // 手动区默认展开条件：unknown（暂无数据）时展开，其他时候折叠。
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null);
+  const open = manualOpen ?? gate?.passed === null;
+  const [brand, setBrand] = useState("");
+  const [visits, setVisits] = useState("");
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [ocr, setOcr] = useState<OcrMetrics | null>(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  async function onOcrFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    // 允许重复选择同一文件
+    e.target.value = "";
+    if (!f) return;
+    setOcrBusy(true);
+    setOcrError(null);
+    try {
+      const fd = new FormData();
+      fd.append("screenshot", f);
+      const r = await ocrScreenshotAction(fd);
+      if (r.ok) {
+        setOcr(r.data);
+      } else {
+        setOcrError(`${d.ocrFailed}：${r.error}`);
+      }
+    } finally {
+      setOcrBusy(false);
+    }
+  }
+
+  function submitManual() {
+    if (!onRecheck) return;
+    const b = brand.trim();
+    const vRaw = visits.trim();
+    let v: number | undefined;
+    if (vRaw) {
+      const n = Number(vRaw);
+      if (!Number.isInteger(n) || n <= 0 || n > 1e12) {
+        setManualError(d.manualInvalid);
+        return;
+      }
+      v = n;
+    }
+    if (!b && v === undefined) {
+      setManualError(d.manualInvalid);
+      return;
+    }
+    setManualError(null);
+    onRecheck({ ...(b ? { brand: b } : {}), ...(v !== undefined ? { manualMonthlyVisits: v } : {}) });
+  }
+
+  const manualSection =
+    onRecheck && gate ? (
+      <div className="mt-3 rounded-lg border border-dashed border-ink/20 p-3">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between text-sm font-medium text-ink"
+          onClick={() => setManualOpen(!open)}
+          aria-expanded={open}
+        >
+          <span>{d.manualTitle}</span>
+          <span aria-hidden className="text-xs text-ink/50">
+            {open ? "▲" : "▼"}
+          </span>
+        </button>
+        {open ? (
+          <div className="mt-2 space-y-2">
+            <div>
+              <label className="mb-1 block text-xs text-ink/60">{d.manualBrandLabel}</label>
+              <input
+                className="w-full rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-sm text-ink"
+                placeholder={d.manualBrandPlaceholder}
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                maxLength={64}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-ink/60">{d.manualVisitsLabel}</label>
+              <input
+                className="w-full rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-sm text-ink"
+                placeholder={d.manualVisitsPlaceholder}
+                value={visits}
+                onChange={(e) => setVisits(e.target.value)}
+                inputMode="numeric"
+              />
+            </div>
+            <p className="text-xs text-ink/50">{d.manualHint}</p>
+            <div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={onOcrFile}
+              />
+              <button
+                type="button"
+                className="rounded-lg border border-ink/15 px-3 py-1.5 text-sm text-ink/80 transition hover:bg-ink/5 disabled:opacity-50"
+                disabled={ocrBusy}
+                onClick={() => fileRef.current?.click()}
+              >
+                {ocrBusy ? d.ocrUploading : d.ocrUpload}
+              </button>
+              <p className="mt-1 text-xs text-ink/50">{d.ocrHint}</p>
+              {ocrError ? (
+                <p className="mt-1 text-xs text-red-600">{ocrError}</p>
+              ) : null}
+              {ocr ? (
+                <div className="mt-2 rounded-lg bg-ink/[0.03] p-2 text-xs text-ink/70">
+                  <p className="font-medium text-ink/80">
+                    {d.ocrReviewNote}
+                    {ocr.confidence !== null ? `（${ocr.confidence}%）` : null}
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    <li>
+                      评分：{ocr.rating ?? "—"}　评论数：
+                      {ocr.reviewCount ?? "—"}　价格：
+                      {ocr.price !== null
+                        ? `${ocr.currency ?? ""} ${ocr.price}`
+                        : "—"}
+                      　月销：{ocr.soldCount ?? "—"}
+                    </li>
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+            {manualError ? (
+              <p className="text-xs text-red-600">{manualError}</p>
+            ) : null}
+            <button
+              type="button"
+              className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+              disabled={recheckBusy}
+              onClick={submitManual}
+            >
+              {recheckBusy ? d.rechecking : d.recheck}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    ) : null;
+
   if (loading) {
     return (
       <section className="rounded-xl border border-ink/10 bg-white p-4">
@@ -146,6 +338,9 @@ export function TrafficGateCard({
           ) : null}
         </p>
       ) : null}
+      {gate.officialSite?.reason ? (
+        <p className="mt-1 text-xs text-ink/55">{gate.officialSite.reason}</p>
+      ) : null}
 
       <div className="mt-2">
         <p className="text-xs font-medium text-ink/55">{d.reason}</p>
@@ -171,6 +366,7 @@ export function TrafficGateCard({
           </ul>
         </div>
       ) : null}
+      {manualSection}
     </section>
   );
 }

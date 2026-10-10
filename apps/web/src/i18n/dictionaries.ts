@@ -20,6 +20,9 @@ import { zh as payoutWatchZh, en as payoutWatchEn } from "./dict/payout-watch";
 import { zh as budgetRulesZh, en as budgetRulesEn } from "./dict/budget-rules";
 import { zh as lpOptimizationZh, en as lpOptimizationEn } from "./dict/lp-optimization";
 import { zh as launchZh, en as launchEn } from "./dict/launch";
+import { zh as quickstartZh, en as quickstartEn } from "./dict/quickstart";
+import { zh as coachZh, en as coachEn } from "./dict/coach";
+import { zh as keywordStarterZh, en as keywordStarterEn } from "./dict/keyword-starter";
 import { zh as networksZh, en as networksEn } from "./dict/networks";
 import { zh as weeklyReportZh, en as weeklyReportEn } from "./dict/weekly-report";
 import { zh as cashbackRateWatchZh, en as cashbackRateWatchEn } from "./dict/cashback-rate-watch";
@@ -60,6 +63,9 @@ export const dictionaries = {
     budgetRules: budgetRulesZh,
     lpOptimization: lpOptimizationZh,
     launch: launchZh,
+    quickstart: quickstartZh,
+    coach: coachZh,
+    keywordStarter: keywordStarterZh,
     networks: networksZh,
     weeklyReport: weeklyReportZh,
     cashbackRateWatch: cashbackRateWatchZh,
@@ -91,6 +97,9 @@ export const dictionaries = {
     budgetRules: budgetRulesEn,
     lpOptimization: lpOptimizationEn,
     launch: launchEn,
+    quickstart: quickstartEn,
+    coach: coachEn,
+    keywordStarter: keywordStarterEn,
     networks: networksEn,
     weeklyReport: weeklyReportEn,
     cashbackRateWatch: cashbackRateWatchEn,

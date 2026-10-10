@@ -6,6 +6,7 @@
  * the existing lenient-validation convention (see offer-intel.ts), not zod.
  */
 import { randomUUID } from "node:crypto";
+import { getTestSpendSnapshot } from "../killswitch/engine.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   NotFoundError,
@@ -92,6 +93,8 @@ const DEFAULT_CONFIG = {
   minCvr: null,
   maxPolicyRisk: null,
   pauseOnMerchantTerminated: true,
+  testSpendCap: null,
+  testZeroConvSpend: null,
 };
 
 function serializeConfig(row: {
@@ -103,6 +106,8 @@ function serializeConfig(row: {
   minCvr: unknown;
   maxPolicyRisk: unknown;
   pauseOnMerchantTerminated: boolean;
+  testSpendCap: unknown;
+  testZeroConvSpend: unknown;
   createdAt: unknown;
   updatedAt: unknown;
 }) {
@@ -116,6 +121,9 @@ function serializeConfig(row: {
     minCvr: row.minCvr,
     maxPolicyRisk: row.maxPolicyRisk,
     pauseOnMerchantTerminated: row.pauseOnMerchantTerminated,
+    testSpendCap: row.testSpendCap === null ? null : Number(row.testSpendCap),
+    testZeroConvSpend:
+      row.testZeroConvSpend === null ? null : Number(row.testZeroConvSpend),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -146,6 +154,45 @@ export async function registerKillSwitchRoutes(
   });
 
   /**
+   * GET /api/v1/offers/:id/test-spend — 测试止损监控：预估花费 + 止损线。
+   * 花费口径：真实点击数 × ProfitModel base CPC；无数据返回 null 花费。
+   */
+  app.get<{
+    Params: { id: string };
+  }>("/api/v1/offers/:id/test-spend", async (request) => {
+    const info = await requireSession(deps, request);
+    const offer = await getOfferOr404(deps, info.tenantId, request.params.id);
+    const row = (await prisma.killSwitchConfig.findUnique({
+      where: { offerId: offer.id },
+      select: { testSpendCap: true, testZeroConvSpend: true, tenantId: true },
+    })) as {
+      testSpendCap: unknown;
+      testZeroConvSpend: unknown;
+      tenantId: string;
+    } | null;
+    if (!row || row.tenantId !== info.tenantId) {
+      return {
+        offerId: offer.id,
+        spend: null,
+        clicks: null,
+        conversions: null,
+        testSpendCap: null,
+        testZeroConvSpend: null,
+      };
+    }
+    const snap = await getTestSpendSnapshot(prisma, info.tenantId, offer.id);
+    return {
+      offerId: offer.id,
+      spend: snap ? snap.spend : null,
+      clicks: snap ? snap.clicks : null,
+      conversions: snap ? snap.conversions : null,
+      testSpendCap: row.testSpendCap === null ? null : Number(row.testSpendCap),
+      testZeroConvSpend:
+        row.testZeroConvSpend === null ? null : Number(row.testZeroConvSpend),
+    };
+  });
+
+  /**
    * PUT /api/v1/offers/:id/kill-switch — upsert thresholds + enabled flag.
    * Writes an AuditLog entry (kill-switch arming is a consequential action).
    */
@@ -169,6 +216,11 @@ export async function registerKillSwitchRoutes(
       body.pauseOnMerchantTerminated,
       "pauseOnMerchantTerminated"
     );
+    const testSpendCap = asOptionalNumber(body.testSpendCap, "testSpendCap");
+    const testZeroConvSpend = asOptionalNumber(
+      body.testZeroConvSpend,
+      "testZeroConvSpend"
+    );
 
     if (
       maxSpend !== undefined &&
@@ -176,6 +228,14 @@ export async function registerKillSwitchRoutes(
       maxSpend < 0
     ) {
       throw new ValidationError("maxSpend must be >= 0");
+    }
+    for (const [v, name] of [
+      [testSpendCap, "testSpendCap"],
+      [testZeroConvSpend, "testZeroConvSpend"],
+    ] as const) {
+      if (v !== undefined && v !== null && v <= 0) {
+        throw new ValidationError(`${name} must be > 0`);
+      }
     }
     if (minCvr !== undefined && minCvr !== null && (minCvr < 0 || minCvr > 1)) {
       throw new ValidationError("minCvr must be between 0 and 1");
@@ -200,6 +260,8 @@ export async function registerKillSwitchRoutes(
     if (maxPolicyRiskInt !== undefined) data.maxPolicyRisk = maxPolicyRiskInt;
     if (pauseOnMerchantTerminated !== undefined)
       data.pauseOnMerchantTerminated = pauseOnMerchantTerminated;
+    if (testSpendCap !== undefined) data.testSpendCap = testSpendCap;
+    if (testZeroConvSpend !== undefined) data.testZeroConvSpend = testZeroConvSpend;
 
     const before = (await prisma.killSwitchConfig.findUnique({
       where: { offerId: offer.id },
@@ -217,6 +279,8 @@ export async function registerKillSwitchRoutes(
         minCvr: minCvr ?? null,
         maxPolicyRisk: maxPolicyRiskInt ?? null,
         pauseOnMerchantTerminated: pauseOnMerchantTerminated ?? true,
+        testSpendCap: testSpendCap ?? null,
+        testZeroConvSpend: testZeroConvSpend ?? null,
       },
       update: data,
     })) as Parameters<typeof serializeConfig>[0];

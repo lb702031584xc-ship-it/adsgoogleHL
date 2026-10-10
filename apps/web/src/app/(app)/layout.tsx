@@ -7,6 +7,7 @@ import { LangSwitcher } from "@/components/lang-switcher";
 import { getCurrentUser, getViewTenant } from "@/lib/api/auth";
 import { clearViewTenantAction, logoutAction } from "@/lib/api/auth-actions";
 import { TrackNav } from "@/components/track-nav";
+import { CoachToggle } from "@/components/coach/coach-toggle";
 
 /**
  * Authenticated app shell: sidebar nav + user footer.
@@ -50,6 +51,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           items: [
             { href: "/launch", label: `① ${t.launch.title}` },
             { href: "/dashboard", label: t.common.nav.dashboard },
+            { href: "/quickstart", label: t.quickstart.pageTitle },
           ],
         },
         {
@@ -67,6 +69,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             { href: "/ads/auto-create", label: ni.launchAds },
             { href: "/campaigns", label: t.common.nav.campaigns },
             { href: "/monitoring", label: ni.trafficMonitoring },
+            { href: "/keywords/starter", label: t.keywordStarter.pageTitle },
           ],
         },
         {
@@ -77,6 +80,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               ? [{ href: "/admin/ai-settings", label: ni.amazonPaapi }]
               : []),
             { href: "/amazon/discovery", label: ni.amazonDiscovery },
+            { href: "/amazon/trends", label: ni.amazonTrends },
+            { href: "/amazon/pipeline", label: ni.amazonPipeline },
+            { href: "/amazon/combo", label: ni.amazonCombo },
+            { href: "/amazon/watch", label: ni.amazonWatch },
             { href: "/offers", label: ni.amazonImportAffiliate },
           ],
         },
@@ -150,6 +157,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             </form>
             <LangSwitcher />
           </div>
+          <CoachToggle dict={t.coach} />
         </div>
       </aside>
       <div className="flex min-w-0 flex-col">

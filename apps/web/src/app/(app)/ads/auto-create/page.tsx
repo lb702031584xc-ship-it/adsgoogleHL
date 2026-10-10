@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 /** 功能2 — 自动化广告：输入终链 URL → AI 生成广告计划 → 确认建广告。 */
 export default async function AdsAutoCreatePage() {
   const lang = await getLang();
-  return <AdsAutoClient dict={lang === "en" ? en : zh} />;
+  return <AdsAutoClient dict={lang === "en" ? en : zh} lang={lang} />;
 }

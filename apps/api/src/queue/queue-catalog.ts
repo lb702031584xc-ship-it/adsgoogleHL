@@ -126,6 +126,12 @@ export const WORKER_REGISTRY: readonly WorkerRegistryEntry[] = [
     processorExport: "processCashbackRateCompareJob",
     entryPoint: "WorkerRuntime.start",
   },
+  {
+    queueName: QUEUE_NAMES.asinWatch,
+    processorModule: "asin-watch-worker.ts",
+    processorExport: "processAsinWatchJob",
+    entryPoint: "WorkerRuntime.start",
+  },
 ] as const;
 
 export interface QueueCatalogEntry {

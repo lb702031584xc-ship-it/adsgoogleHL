@@ -18,6 +18,7 @@ export default async function LaunchPage() {
       dict={lang === "en" ? en : zh}
       offers={offersPage.items}
       initialChecklists={checklists}
+      lang={lang}
     />
   );
 }

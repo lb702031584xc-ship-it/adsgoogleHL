@@ -4,6 +4,8 @@ import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createOfferAction } from "@/lib/api/entity-actions";
 import { useI18n } from "@/i18n/I18nProvider";
+import { coachCheckAction, type CoachFinding } from "@/lib/api/coach-actions";
+import { CoachGate, hasCoachBlock } from "@/components/coach/coach-gate";
 
 const inputClassName =
   "w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm focus:border-signal focus:outline-none";
@@ -28,6 +30,7 @@ export function OfferForm() {
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [coachFindings, setCoachFindings] = useState<CoachFinding[]>([]);
   const { t } = useI18n();
   const f = t.entities.forms.offer;
 
@@ -38,7 +41,7 @@ export function OfferForm() {
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!valid || pending) return;
+    if (!valid || pending || hasCoachBlock(coachFindings)) return;
     setError(null);
     const priorityNum = Number(priority);
     start(async () => {
@@ -98,8 +101,21 @@ export function OfferForm() {
           className={inputClassName}
           value={destinationUrl}
           onChange={(e) => setDestinationUrl(e.target.value)}
+          onBlur={() => {
+            const url = destinationUrl.trim();
+            if (!url) {
+              setCoachFindings([]);
+              return;
+            }
+            void coachCheckAction({ url }).then((r) => {
+              if (r.ok) setCoachFindings(r.data.findings);
+            });
+          }}
           placeholder={f.destinationUrlPlaceholder}
         />
+        <div className="mt-2">
+          <CoachGate dict={t.coach} findings={coachFindings} />
+        </div>
       </div>
       <div className="grid gap-5 sm:grid-cols-2">
         <div>

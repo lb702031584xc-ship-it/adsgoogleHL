@@ -4,6 +4,20 @@
  * `t.common.*` — do not duplicate it here.
  */
 export const zh = {
+  firstWin: {
+    title: "首单进度",
+    spend: "累计花费",
+    clicks: "累计点击",
+    estConversions: "预估转化数",
+    estNote: "按 2% 转化率估算",
+    manualSpendHint: "手动录入花费",
+    save: "保存",
+    progressToFirst: "距首单",
+    doneMsg: "🎉 已达到首单期望点击数，继续加油，复盘转化！",
+    insight:
+      "已有 {clicks} 次点击，按 {cvr}% 转化率估算，预计再来 {left} 次点击出首单（估算值，仅供参考）。",
+    goQuickstart: "7 天跑起来",
+  },
   page: {
     description: "只读的脚本集成总览——同步健康状况、目标与日志。",
     refreshing: "正在刷新…",
@@ -105,6 +119,20 @@ export const zh = {
 };
 
 export const en: typeof zh = {
+  firstWin: {
+    title: "First-order progress",
+    spend: "Total spend",
+    clicks: "Total clicks",
+    estConversions: "Est. conversions",
+    estNote: "Estimated at 2% CVR",
+    manualSpendHint: "Enter spend manually",
+    save: "Save",
+    progressToFirst: "To first order",
+    doneMsg: "🎉 You've hit the expected clicks for a first order — keep going and review conversions!",
+    insight:
+      "{clicks} clicks so far. At an estimated {cvr}% CVR, about {left} more clicks to your first order (estimate, for reference only).",
+    goQuickstart: "7-Day Launch",
+  },
   page: {
     description:
       "Read-only Script Integration overview — sync health, targets, and logs.",

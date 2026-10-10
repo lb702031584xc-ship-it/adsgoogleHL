@@ -14,7 +14,10 @@
  */
 import type { PrismaClient } from "@adlinklab/database";
 import { registrableDomain } from "../ai/compliance.js";
-import { detectOfficialSite } from "./official-site.js";
+import {
+  detectOfficialSite,
+  isMarketplaceDomain,
+} from "./official-site.js";
 import { getKeywordInterest } from "./trends.js";
 import { SimilarWebProvider } from "./similarweb.js";
 import { DataForSeoProvider } from "./dataforseo.js";
@@ -39,6 +42,11 @@ export interface EvaluateTrafficGateInput {
   domain?: string | null;
   /** Trends 地理区域，默认 'US'。 */
   geo?: string;
+  /**
+   * 用户手动输入的月访问量（正整数）：提供时以它为准做通过/不通过判定，
+   * 不再 unknown；只对比"官网月访问量阈值"这一档。
+   */
+  manualMonthlyVisits?: number | null;
 }
 
 /** 中英文停用词（标题分词/品牌提取时过滤）。 */
@@ -123,25 +131,106 @@ async function evaluate(
   const geo = (input.geo ?? "US").trim() || "US";
   const thresholds = input.thresholds;
   const signals: TrafficSignal[] = [];
+  /** 任一 Trends 调用被限流（429/403）时为 true，用于 reason 文案区分。 */
+  let trendsRateLimited = false;
 
-  // ---- 官网：调用方直给 domain 时跳过自动检测 ----
+  // ---- 手动输入值归一化：正整数才有效 ----
+  const rawManual = input.manualMonthlyVisits;
+  const manual =
+    typeof rawManual === "number" &&
+    Number.isFinite(rawManual) &&
+    rawManual > 0
+      ? Math.floor(rawManual)
+      : null;
+
+  // ---- 官网判定 ----
+  // 规则：电商平台域名（amazon/ebay/walmart…）永远不能视为品牌官网。
+  // - 平台域名 + 有 brand → 对 brand 跑自动检测，用检出的品牌官网做流量门；
+  // - 平台域名 + 无 brand → officialSite 判 found=false，reason 请补充品牌名，不硬 fail；
+  // - 普通商家域名直给 → 视为官网，跳过检测（现有行为保持）。
   const providedDomain = normalizeProvidedDomain(input.domain ?? "");
+  const brandForDetection =
+    (input.brand ?? "").trim() || deriveBrandFromTitle(input.title ?? "");
   let officialSite: OfficialSiteInfo;
   let detectionNote = "";
-  if (providedDomain) {
+  /** 实际用于流量判定的官网域名；null 表示没有可用官网走关键词分支。 */
+  let siteDomain: string | null = null;
+
+  if (providedDomain && isMarketplaceDomain(providedDomain)) {
+    if (brandForDetection) {
+      const detected = await detectOfficialSite(brandForDetection ?? "", fetchImpl);
+      if (
+        detected.found &&
+        detected.domain &&
+        !isMarketplaceDomain(detected.domain)
+      ) {
+        officialSite = {
+          ...detected,
+          reason: `品牌“${brandForDetection}”的官网（DuckDuckGo 自动检测）；链接是电商平台，平台域名不视为品牌官网`,
+        };
+        siteDomain = detected.domain;
+        detectionNote = officialSite.reason ?? "";
+      } else {
+        officialSite = {
+          found: false,
+          domain: providedDomain,
+          confidence: "low",
+          reason: "链接是电商平台，平台域名不视为品牌官网；未能检出品牌官网",
+        };
+        detectionNote = officialSite.reason ?? "";
+      }
+    } else {
+      officialSite = {
+        found: false,
+        domain: providedDomain,
+        confidence: "low",
+        reason: "链接是电商平台，平台域名不视为品牌官网；请补充品牌名以检测品牌官网",
+      };
+      detectionNote = officialSite.reason ?? "";
+    }
+  } else if (providedDomain) {
     officialSite = { found: true, domain: providedDomain, confidence: "medium" };
+    siteDomain = providedDomain;
     detectionNote = "官网域名由调用方提供，跳过自动检测";
   } else {
-    const brand = (input.brand ?? "").trim() || deriveBrandFromTitle(input.title ?? "");
-    officialSite = await detectOfficialSite(brand ?? "", fetchImpl);
+    const detected = await detectOfficialSite(brandForDetection ?? "", fetchImpl);
+    // 防御：即使搜索过滤漏网，检出的平台域名也不采信。
+    if (
+      detected.found &&
+      detected.domain &&
+      isMarketplaceDomain(detected.domain)
+    ) {
+      officialSite = {
+        found: false,
+        domain: null,
+        confidence: "low",
+        reason: `检出域名 ${detected.domain} 是电商平台，不视为品牌官网`,
+      };
+    } else {
+      officialSite = detected;
+    }
     detectionNote =
       officialSite.found && officialSite.domain
         ? `官网 ${officialSite.domain}（DuckDuckGo 免费自动检测，置信度 ${officialSite.confidence}）`
         : "未找到品牌官网（DuckDuckGo 免费自动检测）";
+    if (officialSite.found && officialSite.domain) siteDomain = officialSite.domain;
   }
 
-  if (officialSite.found && officialSite.domain) {
-    const domain = officialSite.domain;
+  // ---- 手动值优先：以手动为准判定，不再 unknown ----
+  if (manual !== null) {
+    signals.push({
+      source: "manual",
+      label: "手动输入月访问量（用户提供，非实测流量）",
+      value: manual,
+      threshold: thresholds.officialSiteMonthlyVisits,
+      passed: manual >= thresholds.officialSiteMonthlyVisits,
+      note:
+        "使用手动输入值判定：只对比“官网月访问量阈值”这一档。" +
+        "数字由用户手动提供（建议来源：SimilarWeb 免费版），非系统实测。" +
+        detectionNote,
+    });
+  } else if (siteDomain) {
+    const domain = siteDomain;
     // ---- 有官网：优先 SimilarWeb 付费绝对流量 ----
     const sw = new SimilarWebProvider(input.prisma, fetchImpl);
     const visits = await sw.getMonthlyVisits(domain);
@@ -161,15 +250,18 @@ async function evaluate(
         deriveBrandFromTitle(input.title ?? "") ||
         (registrableDomain(domain).split(".")[0] ?? domain);
       const interest = await getKeywordInterest([brandKeyword], geo, fetchImpl);
+      if (interest.rateLimited) trendsRateLimited = true;
       signals.push({
         source: "trends",
         label: "品牌热度（Google Trends 免费相对值，非访问量）",
-        value: interest,
+        value: interest.value,
         threshold: thresholds.brandInterest,
-        passed: interest === null ? null : interest >= thresholds.brandInterest,
+        passed:
+          interest.value === null ? null : interest.value >= thresholds.brandInterest,
         note:
           `${detectionNote}；SimilarWeb 未配置（需付费 key）或获取失败，` +
-          `改用免费品牌热度。关键词：${brandKeyword}`,
+          `改用免费品牌热度。关键词：${brandKeyword}` +
+          (interest.rateLimited ? "；Google Trends 在服务器 IP 上被限流（429），免费热度不可用" : ""),
       });
     }
   } else {
@@ -181,15 +273,18 @@ async function evaluate(
     const interest =
       coreKeywords.length > 0
         ? await getKeywordInterest(coreKeywords, geo, fetchImpl)
-        : null;
+        : { value: null as number | null, rateLimited: false };
+    if (interest.rateLimited) trendsRateLimited = true;
     signals.push({
       source: "trends",
       label: "核心关键词热度（Google Trends 免费相对值，非搜索量）",
-      value: interest,
+      value: interest.value,
       threshold: coreKeywords.length > 0 ? thresholds.keywordInterest : null,
       passed:
-        interest === null ? null : interest >= thresholds.keywordInterest,
-      note: `${detectionNote}。关键词：${coreKeywords.join(" / ") || "无"}`,
+        interest.value === null ? null : interest.value >= thresholds.keywordInterest,
+      note:
+        `${detectionNote}。关键词：${coreKeywords.join(" / ") || "无"}` +
+        (interest.rateLimited ? "；Google Trends 在服务器 IP 上被限流（429），免费热度不可用" : ""),
     });
     // ---- DataForSEO 绝对搜索量：仅展示，不判定 ----
     const df = new DataForSeoProvider(input.prisma, fetchImpl);
@@ -217,15 +312,21 @@ async function evaluate(
       .map((s) => s.label);
     reason =
       `流量门结果未知（unknown）：暂无数据——` +
+      (trendsRateLimited
+        ? "Google Trends 在服务器 IP 上被限流（429），免费热度不可用；"
+        : "") +
       (missing.length > 0
         ? `${missing.join("；")}未配置（需付费 key）或获取失败`
         : "无可判定的数据源") +
-      `。免费数据源（Google Trends）与付费数据源（SimilarWeb/DataForSEO）均未能返回有效判定数据。`;
+      `。免费数据源（Google Trends）与付费数据源（SimilarWeb/DataForSEO）均未能返回有效判定数据。` +
+      (officialSite.reason ? `官网说明：${officialSite.reason}。` : "");
   } else if (decisive.every((s) => s.passed === true)) {
     passed = true;
     reason =
       `流量门通过：${decisive.map(describeSignal).join("；")}。` +
-      (providedDomain ? "官网域名由调用方提供，跳过自动检测。" : "");
+      (providedDomain && !isMarketplaceDomain(providedDomain)
+        ? "官网域名由调用方提供，跳过自动检测。"
+        : "");
   } else {
     passed = false;
     reason =
@@ -233,7 +334,9 @@ async function evaluate(
         .filter((s) => s.passed === false)
         .map(describeSignal)
         .join("；")}。` +
-      (providedDomain ? "官网域名由调用方提供，跳过自动检测。" : "");
+      (providedDomain && !isMarketplaceDomain(providedDomain)
+        ? "官网域名由调用方提供，跳过自动检测。"
+        : "");
   }
 
   return { passed, reason, officialSite, signals };

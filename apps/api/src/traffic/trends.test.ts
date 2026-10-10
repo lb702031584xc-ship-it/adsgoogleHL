@@ -1,6 +1,7 @@
 /**
  * Google Trends 热度单测：XSSI 前缀剥离、token 流程、averages/timelineData、
- * malformed JSON、429、Redis 缓存 24h。
+ * malformed JSON、429/403 限流区分、Redis 缓存 24h。
+ * getKeywordInterest 返回 { value, rateLimited }。
  */
 import { describe, expect, it, vi } from "vitest";
 import { getKeywordInterest, type TrendsCache } from "./trends.js";
@@ -52,7 +53,7 @@ describe("getKeywordInterest", () => {
   it("剥离 )]}', 前缀并取 averages 平均（多词）", async () => {
     const { fetch, calls } = trendsFetch(WIDGET_AVERAGES);
     const v = await getKeywordInterest(["wireless earbuds", "bluetooth headphones"], "US", fetch);
-    expect(v).toBe(50);
+    expect(v).toEqual({ value: 50, rateLimited: false });
     expect(calls[0]).toContain("/trends/api/explore");
     expect(calls[1]).toContain("/trends/api/widgetdata/multiline");
     expect(calls[1]).toContain(encodeURIComponent("tok123"));
@@ -64,21 +65,35 @@ describe("getKeywordInterest", () => {
     const { fetch } = trendsFetch(WIDGET_TIMELINE);
     const v = await getKeywordInterest(["a", "b"], "US", fetch);
     // 词1: (10+30)/2=20；词2: (20+40)/2=30；平均 25
-    expect(v).toBe(25);
+    expect(v).toEqual({ value: 25, rateLimited: false });
   });
 
-  it("429 → null", async () => {
+  it("explore 429 → { value: null, rateLimited: true }", async () => {
     const { fetch } = trendsFetch(WIDGET_AVERAGES, {
       ok: false,
       status: 429,
       text: "Too Many Requests",
     });
-    await expect(getKeywordInterest(["a"], "US", fetch)).resolves.toBe(null);
+    await expect(getKeywordInterest(["a"], "US", fetch)).resolves.toEqual({ value: null, rateLimited: true });
   });
 
-  it("widgetdata 429 → null", async () => {
+  it("explore 403 → rateLimited: true（同样视为被限流）", async () => {
+    const { fetch } = trendsFetch(WIDGET_AVERAGES, {
+      ok: false,
+      status: 403,
+      text: "Forbidden",
+    });
+    await expect(getKeywordInterest(["a"], "US", fetch)).resolves.toEqual({ value: null, rateLimited: true });
+  });
+
+  it("widgetdata 429 → rateLimited: true", async () => {
     const { fetch } = trendsFetch({ ok: false, status: 429, text: "" });
-    await expect(getKeywordInterest(["a"], "US", fetch)).resolves.toBe(null);
+    await expect(getKeywordInterest(["a"], "US", fetch)).resolves.toEqual({ value: null, rateLimited: true });
+  });
+
+  it("widgetdata 500 → rateLimited: false（普通失败）", async () => {
+    const { fetch } = trendsFetch({ ok: false, status: 500, text: "" });
+    await expect(getKeywordInterest(["a"], "US", fetch)).resolves.toEqual({ value: null, rateLimited: false });
   });
 
   it("malformed JSON → null（不抛错）", async () => {
@@ -87,7 +102,7 @@ describe("getKeywordInterest", () => {
       status: 200,
       text: `)]}',\nnot-json{{{`,
     });
-    await expect(getKeywordInterest(["a"], "US", fetch)).resolves.toBe(null);
+    await expect(getKeywordInterest(["a"], "US", fetch)).resolves.toEqual({ value: null, rateLimited: false });
   });
 
   it("无 TIMESERIES token → null", async () => {
@@ -96,21 +111,21 @@ describe("getKeywordInterest", () => {
       status: 200,
       text: `)]}',\n{"widgets":[{"id":"SEARCH","token":"s"}]}`,
     });
-    await expect(getKeywordInterest(["a"], "US", fetch)).resolves.toBe(null);
+    await expect(getKeywordInterest(["a"], "US", fetch)).resolves.toEqual({ value: null, rateLimited: false });
   });
 
   it("网络异常 → null（不抛错）", async () => {
     const throwing = (async () => {
       throw new Error("boom");
     }) as unknown as typeof fetch;
-    await expect(getKeywordInterest(["a"], "US", throwing)).resolves.toBe(null);
+    await expect(getKeywordInterest(["a"], "US", throwing)).resolves.toEqual({ value: null, rateLimited: false });
   });
 
   it("空关键词 → null，不发起请求", async () => {
     const f = vi.fn();
     await expect(
       getKeywordInterest(["  ", ""], "US", f as unknown as typeof fetch)
-    ).resolves.toBe(null);
+    ).resolves.toEqual({ value: null, rateLimited: false });
     expect(f).not.toHaveBeenCalled();
   });
 
@@ -122,7 +137,7 @@ describe("getKeywordInterest", () => {
       setex: vi.fn(),
     };
     const v = await getKeywordInterest(["a"], "US", fetchSpy, redis);
-    expect(v).toBe(77);
+    expect(v).toEqual({ value: 77, rateLimited: false });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(redis.get).toHaveBeenCalledWith("traffic:trends:US:a");
   });
@@ -134,7 +149,7 @@ describe("getKeywordInterest", () => {
       setex: vi.fn().mockResolvedValue("OK"),
     };
     const v = await getKeywordInterest(["a", "b"], "US", fetch, redis);
-    expect(v).toBe(50);
+    expect(v).toEqual({ value: 50, rateLimited: false });
     expect(redis.setex).toHaveBeenCalledWith(
       "traffic:trends:US:a,b",
       86400,
@@ -149,6 +164,6 @@ describe("getKeywordInterest", () => {
       setex: vi.fn().mockRejectedValue(new Error("redis down")),
     };
     const v = await getKeywordInterest(["a", "b"], "US", fetch, redis);
-    expect(v).toBe(50);
+    expect(v).toEqual({ value: 50, rateLimited: false });
   });
 });

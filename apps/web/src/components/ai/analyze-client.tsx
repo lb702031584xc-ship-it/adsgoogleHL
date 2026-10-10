@@ -60,6 +60,8 @@ export function AnalyzeClient({
   const [gate, setGate] = useState<TrafficGate | null>(null);
   const [gateLoading, setGateLoading] = useState(false);
   const gateSeq = useRef(0);
+  /** 最近一次流量门检测的 brand/keywords，供手动区"重新检测"复用。 */
+  const lastGateInput = useRef<{ brand?: string; keywords?: string[] }>({});
 
   const inputClass =
     "w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm text-ink placeholder:text-ink/35 focus:border-signal focus:outline-none";
@@ -103,6 +105,7 @@ export function AnalyzeClient({
         const seq = ++gateSeq.current;
         const brand = res.data.merchant?.trim() || merchant.trim() || undefined;
         const keywords = (res.data.analysis.keywords ?? []).slice(0, 5);
+        lastGateInput.current = { brand, keywords };
         setGate(null);
         setGateLoading(true);
         void checkTrafficGateAction({ brand, keywords }).then((g) => {
@@ -125,8 +128,25 @@ export function AnalyzeClient({
     setGate(null);
     setGateLoading(false);
     gateSeq.current++;
+    lastGateInput.current = {};
     setError(null);
     setNotConfigured(false);
+  }
+
+  /** 流量门手动区"重新检测"：品牌名/手动月访问量至少提供一个。 */
+  function recheckGate(input: { brand?: string; manualMonthlyVisits?: number }) {
+    const seq = ++gateSeq.current;
+    setGateLoading(true);
+    const base = lastGateInput.current;
+    void checkTrafficGateAction({
+      brand: input.brand || base.brand,
+      keywords: base.keywords,
+      manualMonthlyVisits: input.manualMonthlyVisits,
+    }).then((g) => {
+      if (seq !== gateSeq.current) return;
+      setGateLoading(false);
+      if (g.ok) setGate(g.data);
+    });
   }
 
   return (
@@ -187,6 +207,8 @@ export function AnalyzeClient({
               gate={gate}
               loading={gateLoading}
               dict={t.ai.analyze.trafficGate}
+              onRecheck={recheckGate}
+              recheckBusy={gateLoading}
             />
           </div>
         </div>

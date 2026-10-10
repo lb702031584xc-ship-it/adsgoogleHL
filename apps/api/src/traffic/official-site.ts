@@ -19,11 +19,99 @@ const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
 /**
- * 平台/社媒域名黑名单（作用于 eTLD+1 后的首标签）。
- * 这些域名即使出现在搜索结果里也不是品牌官网。
+ * 平台/社媒域名黑名单（作用于搜索结果域名）。
+ * 电商平台部分已抽成 MARKETPLACE_DOMAINS + isMarketplaceDomain() 共享；
+ * 这里保留社媒/百科类（它们不是"品牌官网"，但也不算电商平台）。
  */
-const PLATFORM_RE =
-  /^(amazon|ebay|walmart|etsy|aliexpress|alibaba|facebook|instagram|youtube|tiktok|twitter|x\.com|linkedin|pinterest|reddit|quora|wikipedia)(\.|$)/i;
+const SOCIAL_RE =
+  /^(facebook|instagram|youtube|tiktok|twitter|x\.com|linkedin|pinterest|reddit|quora|wikipedia)(\.|$)/i;
+
+/**
+ * 电商平台域名库（eTLD+1 首标签，小写）。
+ * 这些是多商家平台，永远不能视为某个品牌的官网。
+ * 注意：只收真正的平台，不收品牌直营站（nike.com/adidas.com 是品牌官网，不是平台）。
+ */
+export const MARKETPLACE_DOMAINS: ReadonlySet<string> = new Set([
+  "amazon",
+  "ebay",
+  "walmart",
+  "aliexpress",
+  "alibaba",
+  "1688",
+  "etsy",
+  "target",
+  "bestbuy",
+  "costco",
+  "rakuten",
+  "shein",
+  "temu",
+  "wish",
+  "newegg",
+  "overstock",
+  "wayfair",
+  "kohls",
+  "macys",
+  "homedepot",
+  "lowes",
+  "jd",
+  "tmall",
+  "taobao",
+  "pinduoduo",
+  "dhgate",
+  "banggood",
+  "gearbest",
+  "lightinthebox",
+  "mercadolibre",
+  "otto",
+  "zalando",
+  "bol",
+  "flipkart",
+  "lazada",
+  "shopee",
+  "coupang",
+  "gmarket",
+  "qoo10",
+  "allegro",
+  "cdiscount",
+  "fnac",
+  "argos",
+  "currys",
+  "mediamarkt",
+  "elcorteingles",
+  "mercari",
+  "vinted",
+  "depop",
+  "poshmark",
+  "stockx",
+  "goat",
+  "farfetch",
+  "ssense",
+  "netaporter",
+  "mytheresa",
+  "asos",
+]);
+
+/**
+ * 判断域名是否为电商平台（子域名/各国后缀归一化后判断）。
+ * 例：www.amazon.co.uk → amazon → true；myamazonstore.com → false；
+ * anker.com → false；可直接传完整 URL（自动去协议/路径）。
+ */
+export function isMarketplaceDomain(domain: string): boolean {
+  const cleaned = (domain ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .split("/")[0]
+    ?.trim();
+  if (!cleaned) return false;
+  const first = registrableDomain(cleaned).split(".")[0] ?? "";
+  return MARKETPLACE_DOMAINS.has(first);
+}
+
+/** 搜索结果过滤：平台域名 + 社媒/百科域名都不是品牌官网。 */
+function isExcludedResultDomain(domain: string): boolean {
+  return isMarketplaceDomain(domain) || SOCIAL_RE.test(domain);
+}
 
 /** 品牌名归一化：小写、去空格/连字符/下划线/间隔号/点号。 */
 function normalizeBrand(brand: string): string {
@@ -140,7 +228,7 @@ export async function detectOfficialSite(
     if (!res.ok) return { ...NOT_FOUND };
     const html = await res.text();
     const domains = parseResultDomains(html).filter(
-      (d) => !PLATFORM_RE.test(d)
+      (d) => !isExcludedResultDomain(d)
     );
     if (domains.length === 0) return { ...NOT_FOUND };
 

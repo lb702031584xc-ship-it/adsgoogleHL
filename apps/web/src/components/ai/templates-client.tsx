@@ -10,6 +10,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDict } from "@/i18n/use-dict";
+import { coachCheckAction, type CoachFinding } from "@/lib/api/coach-actions";
+import { CoachGate, hasCoachBlock } from "@/components/coach/coach-gate";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { Dict } from "@/i18n/dictionaries";
 import {
@@ -261,6 +263,8 @@ export function TemplatesClient() {
   const [pageUrl, setPageUrl] = useState("");
   const [useError, setUseError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [coachFindings, setCoachFindings] = useState<CoachFinding[]>([]);
+  const [coachChecking, setCoachChecking] = useState(false);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selected =
@@ -354,6 +358,15 @@ export function TemplatesClient() {
     if (productsJsonError) {
       setUseError(d.invalidProductsJson);
       return;
+    }
+    // 教练模式（第十三批）：发布前检查 Affiliate Disclosure
+    setCoachChecking(true);
+    setUseError(null);
+    const coachRes = await coachCheckAction({ content: previewHtml });
+    setCoachChecking(false);
+    if (coachRes.ok) {
+      setCoachFindings(coachRes.data.findings);
+      if (hasCoachBlock(coachRes.data.findings)) return;
     }
     setCreating(true);
     setUseError(null);
@@ -523,6 +536,9 @@ export function TemplatesClient() {
             {useError ? (
               <p className="mt-3 text-sm text-rose-700">{useError}</p>
             ) : null}
+            <div className="mt-3">
+              <CoachGate dict={dict.coach} findings={coachFindings} />
+            </div>
             <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"
@@ -534,7 +550,7 @@ export function TemplatesClient() {
               <button
                 type="button"
                 onClick={confirmUse}
-                disabled={creating}
+                disabled={creating || coachChecking || hasCoachBlock(coachFindings)}
                 className="rounded-lg bg-signal px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
               >
                 {creating ? d.creating : d.confirm}

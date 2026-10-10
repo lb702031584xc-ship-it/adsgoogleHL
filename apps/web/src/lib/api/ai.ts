@@ -329,6 +329,10 @@ export interface AmazonDiscoveryCriteria {
   minReviews?: number | null;
   region?: string;
   maxResults?: number;
+  opportunityMode?: boolean;
+  opportunityMinReviews?: number | null;
+  opportunityMinRating?: number | null;
+  opportunityMaxRating?: number | null;
 }
 
 import type { AmazonScoredProduct } from "./amazon-types";

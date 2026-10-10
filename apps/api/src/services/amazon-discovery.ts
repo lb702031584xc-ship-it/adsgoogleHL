@@ -36,6 +36,11 @@ export interface DiscoveryCriteria {
   maxResults?: number;
   /** 本次发现使用的流量门阈值（历史追溯用，runDiscovery 开头从 AiSetting 取出） */
   trafficThresholds?: TrafficThresholds;
+  /** 机会品模式（第八批）：reviews ≥ opportunityMinReviews 且 opportunityMinRating ≤ rating < opportunityMaxRating */
+  opportunityMode?: boolean;
+  opportunityMinReviews?: number | null;
+  opportunityMinRating?: number | null;
+  opportunityMaxRating?: number | null;
 }
 
 export interface ScoredProduct extends AmazonProduct {
@@ -45,6 +50,8 @@ export interface ScoredProduct extends AmazonProduct {
   reasons: string[];
   /** 流量需求门评估结果（仅 top N 产品有值，历史记录反序列化时为 undefined） */
   trafficGate?: TrafficGateResult | null;
+  /** 机会品（第八批）：机会品模式下检出，pipeline 指数 +10 */
+  opportunity?: boolean;
 }
 
 export interface DiscoveryResult {
@@ -85,6 +92,16 @@ export function validateCriteria(input: unknown): DiscoveryCriteria {
   if (minRating !== null && (minRating < 1 || minRating > 5)) {
     throw new Error("minRating 必须在 1-5 之间");
   }
+  const opportunityMode = o.opportunityMode === true;
+  const oppMinReviews = num(o.opportunityMinReviews) ?? 2000;
+  const oppMinRating = num(o.opportunityMinRating) ?? 3.0;
+  const oppMaxRating = num(o.opportunityMaxRating) ?? 4.0;
+  if (oppMinRating < 1 || oppMinRating > 5 || oppMaxRating < 1 || oppMaxRating > 5) {
+    throw new Error("机会品评分区间必须在 1-5 之间");
+  }
+  if (oppMaxRating <= oppMinRating) {
+    throw new Error("机会品评分上限必须大于下限");
+  }
   return {
     keywords,
     minPrice: num(o.minPrice),
@@ -96,11 +113,18 @@ export function validateCriteria(input: unknown): DiscoveryCriteria {
         ? o.region.trim().toUpperCase()
         : "US",
     maxResults: Math.min(Math.max(num(o.maxResults) ?? 30, 5), 100),
+    opportunityMode,
+    opportunityMinReviews: oppMinReviews,
+    opportunityMinRating: oppMinRating,
+    opportunityMaxRating: oppMaxRating,
   };
 }
 
 /** 对单个产品打分并生成推荐理由 */
-export function scoreAndExplain(p: AmazonProduct): ScoredProduct {
+export function scoreAndExplain(
+  p: AmazonProduct,
+  opportunityMode = false
+): ScoredProduct {
   const score = scoreAmazonProduct(p);
   const estimatedCommission =
     p.price !== null && p.price > 0 ? Math.round(p.price * 0.04 * 100) / 100 : null;
@@ -121,7 +145,14 @@ export function scoreAndExplain(p: AmazonProduct): ScoredProduct {
   if (estimatedCommission !== null) {
     reasons.push(`预估佣金 $${estimatedCommission}`);
   }
-  return { ...p, score, estimatedCommission, reasons };
+  // 第八批：机会品标注（基于评分分布的推断，非评论原文解读）
+  const opportunity = opportunityMode;
+  if (opportunity) {
+    reasons.push(
+      "高需求 + 低满意度：评论数大但评分偏低（基于评分分布的推断，非评论原文解读），适合推高口碑替代品"
+    );
+  }
+  return { ...p, score, estimatedCommission, reasons, opportunity };
 }
 
 /** 过滤不达标产品 */
@@ -131,11 +162,20 @@ export function filterProducts(
 ): AmazonProduct[] {
   return products.filter((p) => {
     if (!p.asin || !p.title) return false;
-    if (criteria.minRating !== null && criteria.minRating !== undefined) {
-      if (p.rating === null || p.rating < criteria.minRating) return false;
-    }
-    if (criteria.minReviews !== null && criteria.minReviews !== undefined) {
-      if (p.reviewCount === null || p.reviewCount < criteria.minReviews) return false;
+    if (criteria.opportunityMode) {
+      // 第八批：机会品模式 — 高评论数 + 评分偏低（阈值可调）
+      const minR = criteria.opportunityMinReviews ?? 2000;
+      const lo = criteria.opportunityMinRating ?? 3.0;
+      const hi = criteria.opportunityMaxRating ?? 4.0;
+      if (p.reviewCount === null || p.reviewCount < minR) return false;
+      if (p.rating === null || p.rating < lo || p.rating >= hi) return false;
+    } else {
+      if (criteria.minRating !== null && criteria.minRating !== undefined) {
+        if (p.rating === null || p.rating < criteria.minRating) return false;
+      }
+      if (criteria.minReviews !== null && criteria.minReviews !== undefined) {
+        if (p.reviewCount === null || p.reviewCount < criteria.minReviews) return false;
+      }
     }
     if (criteria.minPrice !== null && criteria.minPrice !== undefined) {
       if (p.price === null || p.price < criteria.minPrice) return false;
@@ -259,7 +299,7 @@ export async function runDiscovery(
   // 过滤 + 打分 + 排序
   const filtered = filterProducts(deduped, criteria);
   const scored = filtered
-    .map(scoreAndExplain)
+    .map((p) => scoreAndExplain(p, criteria.opportunityMode === true))
     .sort((a, b) => b.score - a.score)
     .slice(0, criteria.maxResults ?? 30);
 

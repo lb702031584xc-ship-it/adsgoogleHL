@@ -465,3 +465,30 @@ export function parseCashbackRateCompareJobData(data: unknown): CashbackRateComp
     ...(typeof tenantId === "string" ? { tenantId: tenantId.trim() } : {}),
   };
 }
+
+/** ASIN 需求异动监控（第十批）：每日快照 job data. */
+export interface AsinWatchJobData {
+  type: "asinWatch";
+  triggeredBy: "schedule" | "manual";
+  tenantId?: string;
+}
+
+/** Validate inbound asin-watch job data. */
+export function parseAsinWatchJobData(data: unknown): AsinWatchJobData {
+  if (!isRecord(data) || data.type !== "asinWatch") {
+    throw new Error("asinWatch job.data must be an object with type 'asinWatch'");
+  }
+  const triggeredBy = data.triggeredBy;
+  if (triggeredBy !== "schedule" && triggeredBy !== "manual") {
+    throw new Error("asinWatch job.data.triggeredBy must be 'schedule' or 'manual'");
+  }
+  const tenantId = data.tenantId;
+  if (tenantId !== undefined && (typeof tenantId !== "string" || !tenantId.trim())) {
+    throw new Error("asinWatch job.data.tenantId must be a non-empty string when set");
+  }
+  return {
+    type: "asinWatch",
+    triggeredBy,
+    ...(typeof tenantId === "string" ? { tenantId: tenantId.trim() } : {}),
+  };
+}

@@ -5,7 +5,7 @@
  * 所有服务端调用都走 @/lib/api/launch-actions.ts（"use server"），
  * 本文件绝不 import @/lib/api/entities 等 server-only 模块（仅 import type）。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EntityPageHeader } from "@/components/entities/ui";
 import type { LaunchDict } from "@/i18n/dict/launch";
 import type { Offer } from "@/lib/api/entities";
@@ -31,6 +31,9 @@ import {
   useTemplateAction,
 } from "@/lib/api/launch-actions";
 import { checkTrafficGateAction } from "@/lib/api/traffic-actions";
+import { coachCheckAction, type CoachFinding } from "@/lib/api/coach-actions";
+import { CoachGate, hasCoachBlock } from "@/components/coach/coach-gate";
+import { zh as coachZh, en as coachEn } from "@/i18n/dict/coach";
 
 const inputClass =
   "w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm text-ink";
@@ -45,9 +48,10 @@ interface Props {
   dict: LaunchDict;
   offers: Offer[];
   initialChecklists: LaunchChecklist[];
+  lang: "zh" | "en";
 }
 
-export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props) {
+export function LaunchWizardClient({ dict: d, offers, initialChecklists, lang }: Props) {
   const [checklists, setChecklists] = useState<LaunchChecklist[]>(initialChecklists);
   const [detail, setDetail] = useState<LaunchDetail | null>(null);
   const [step, setStep] = useState(1);
@@ -70,6 +74,8 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
   // 流量需求门：step2 选中分析后自动跑一次，失败只显示"暂无数据"，不阻塞流程。
   const [gate, setGate] = useState<TrafficGate | null>(null);
   const [gateLoading, setGateLoading] = useState(false);
+  /** 最近一次流量门检测的 brand/keywords，供手动区"重新检测"复用。 */
+  const lastGateInput = useRef<{ brand?: string; keywords?: string[] }>({});
 
   const activeOffer = offers.find((o) => o.id === offerId) ?? detail?.offer ?? null;
   const activeAnalysis = analyses.find((a) => a.id === analysisId) ?? null;
@@ -81,9 +87,11 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
     if (!brand && keywords.length === 0) {
       setGate(null);
       setGateLoading(false);
+      lastGateInput.current = {};
       return;
     }
     let alive = true;
+    lastGateInput.current = { brand, keywords };
     setGate(null);
     setGateLoading(true);
     void checkTrafficGateAction({ brand, keywords }).then((g) => {
@@ -95,6 +103,25 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
       alive = false;
     };
   }, [step, analysisId, analyses, activeAnalysis?.merchant, activeOffer?.name]);
+
+  /** 流量门手动区"重新检测"：品牌名/手动月访问量至少提供一个。 */
+  function recheckGate(input: { brand?: string; manualMonthlyVisits?: number }) {
+    const base = lastGateInput.current;
+    let alive = true;
+    setGateLoading(true);
+    void checkTrafficGateAction({
+      brand: input.brand || base.brand,
+      keywords: base.keywords,
+      manualMonthlyVisits: input.manualMonthlyVisits,
+    }).then((g) => {
+      if (!alive) return;
+      setGateLoading(false);
+      if (g.ok) setGate(g.data);
+    });
+    return () => {
+      alive = false;
+    };
+  }
 
   async function refreshDetail(id: string) {
     const res = await getLaunchDetailAction(id);
@@ -258,9 +285,22 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
 
   /* ---------- step 6: go live ---------- */
 
+  const [coachFindings, setCoachFindings] = useState<CoachFinding[]>([]);
+
   async function goLive() {
     if (!detail) return;
     if (!businessNameChecked) return fail(d.businessNameCheckRequired);
+    // 教练模式（第十三批）：上线前品牌词拦截（复用品牌词检查）
+    const keywords: string[] = (activeAnalysis?.analysis?.keywords ?? []).slice(0, 10);
+    const merchant = activeAnalysis?.merchant ?? activeOffer?.name ?? "";
+    if (keywords.length > 0 && merchant) {
+      const cr = await coachCheckAction({ keywords, brandTerms: [merchant] });
+      if (cr.ok && hasCoachBlock(cr.data.findings)) {
+        setCoachFindings(cr.data.findings);
+        return;
+      }
+      if (cr.ok) setCoachFindings([]);
+    }
     setBusy("activate");
     setError(null);
     const res = await activateLaunchAction(detail.checklist.id);
@@ -428,6 +468,8 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
                 gate={gate}
                 loading={gateLoading}
                 dict={d.trafficGate}
+                onRecheck={recheckGate}
+                recheckBusy={gateLoading}
               />
             </div>
           )}
@@ -664,6 +706,9 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
             </div>
           </dl>
           <p className="mt-3 text-sm text-ink/60">{d.goLiveHint}</p>
+          <div className="mt-3">
+            <CoachGate dict={lang === "en" ? coachEn : coachZh} findings={coachFindings} />
+          </div>
           {!activateResult && (
             <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
               <input
@@ -695,7 +740,7 @@ export function LaunchWizardClient({ dict: d, offers, initialChecklists }: Props
               </button>
               <button
                 className={btnPrimary}
-                disabled={busy === "activate" || !detail.trackingLink || !businessNameChecked}
+                disabled={busy === "activate" || !detail.trackingLink || !businessNameChecked || hasCoachBlock(coachFindings)}
                 onClick={() => void goLive()}
               >
                 {busy === "activate" ? "…" : d.goLive}

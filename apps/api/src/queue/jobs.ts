@@ -30,6 +30,7 @@ export const QUEUE_NAMES = {
   cashbackLpScore: "cashbackLpScore",
   cashbackRedirectCheck: "cashbackRedirectCheck",
   cashbackRateCompare: "cashbackRateCompare",
+  asinWatch: "asinWatch",
 } as const satisfies Record<SyncJobType, string>;
 
 /** Queues with real Worker + Processor (Phase 9.6). Names must stay stable. */
@@ -198,6 +199,13 @@ export const JOB_DEFINITIONS: JobDefinition[] = [
     queueName: QUEUE_NAMES.cashbackRateCompare,
     defaultAttempts: 3,
     backoffDelayMs: 1_000,
+    backoffType: "exponential",
+  },
+  {
+    name: "asinWatch",
+    queueName: QUEUE_NAMES.asinWatch,
+    defaultAttempts: 3,
+    backoffDelayMs: 2_000,
     backoffType: "exponential",
   },
 ];

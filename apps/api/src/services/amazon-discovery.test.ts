@@ -237,3 +237,82 @@ describe("runDiscovery traffic gate", () => {
     expect(maxActive).toBe(3);
   });
 });
+
+describe("机会品模式（第八批）", () => {
+  const prod = (overrides: Partial<AmazonProduct> = {}): AmazonProduct => ({
+    asin: "B0EXAMPLE1",
+    title: "Test Product",
+    detailPageUrl: "https://www.amazon.com/dp/B0EXAMPLE1",
+    price: 59.99,
+    rating: 3.7,
+    reviewCount: 3200,
+    brand: "TestBrand",
+    isPrime: true,
+    availability: "In Stock",
+    ...overrides,
+  });
+
+  it("validateCriteria 解析机会品阈值（默认 2000 / 3.0 / 4.0）", () => {
+    const c = validateCriteria({
+      keywords: ["kettle"],
+      opportunityMode: true,
+    });
+    expect(c.opportunityMode).toBe(true);
+    expect(c.opportunityMinReviews).toBe(2000);
+    expect(c.opportunityMinRating).toBe(3.0);
+    expect(c.opportunityMaxRating).toBe(4.0);
+  });
+
+  it("validateCriteria 接受自定义阈值", () => {
+    const c = validateCriteria({
+      keywords: ["kettle"],
+      opportunityMode: true,
+      opportunityMinReviews: 5000,
+      opportunityMinRating: 3.2,
+      opportunityMaxRating: 4.2,
+    });
+    expect(c.opportunityMinReviews).toBe(5000);
+    expect(c.opportunityMinRating).toBe(3.2);
+    expect(c.opportunityMaxRating).toBe(4.2);
+  });
+
+  it("validateCriteria 拒绝上限 ≤ 下限", () => {
+    expect(() =>
+      validateCriteria({
+        keywords: ["kettle"],
+        opportunityMode: true,
+        opportunityMinRating: 4.0,
+        opportunityMaxRating: 4.0,
+      })
+    ).toThrow();
+  });
+
+  it("filterProducts 机会品模式：只保留 高评论+低评分", () => {
+    const criteria = validateCriteria({ keywords: ["k"], opportunityMode: true });
+    const list = [
+      prod({ asin: "B1", rating: 3.7, reviewCount: 3200 }), // 保留
+      prod({ asin: "B2", rating: 4.5, reviewCount: 5000 }), // 评分过高
+      prod({ asin: "B3", rating: 3.5, reviewCount: 800 }), // 评论不足
+      prod({ asin: "B4", rating: 2.9, reviewCount: 4000 }), // 评分过低
+      prod({ asin: "B5", rating: 4.0, reviewCount: 4000 }), // rating=4.0 不含
+    ];
+    const out = filterProducts(list, criteria);
+    expect(out.map((p) => p.asin)).toEqual(["B1"]);
+  });
+
+  it("scoreAndExplain 机会品模式：打 opportunity 标记 + 推断说明", () => {
+    const sp = scoreAndExplain(prod(), true);
+    expect(sp.opportunity).toBe(true);
+    expect(
+      sp.reasons.some(
+        (r) => r.includes("高需求 + 低满意度") && r.includes("基于评分分布的推断")
+      )
+    ).toBe(true);
+  });
+
+  it("scoreAndExplain 非机会品模式：无标记无说明", () => {
+    const sp = scoreAndExplain(prod(), false);
+    expect(sp.opportunity).toBe(false);
+    expect(sp.reasons.some((r) => r.includes("高需求 + 低满意度"))).toBe(false);
+  });
+});

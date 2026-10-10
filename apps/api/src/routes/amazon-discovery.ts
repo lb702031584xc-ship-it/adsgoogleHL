@@ -82,6 +82,10 @@ export function registerAmazonDiscoveryRoutes(
       minReviews?: unknown;
       region?: unknown;
       maxResults?: unknown;
+      opportunityMode?: unknown;
+      opportunityMinReviews?: unknown;
+      opportunityMinRating?: unknown;
+      opportunityMaxRating?: unknown;
     };
   }>("/api/v1/amazon/discover", async (request) => {
     const session = await requireSession(deps, request);

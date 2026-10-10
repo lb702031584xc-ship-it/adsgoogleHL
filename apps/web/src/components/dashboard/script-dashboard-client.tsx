@@ -26,6 +26,7 @@ import {
   ErrorState,
 } from "@/components/dashboard/states";
 import { useDict } from "@/i18n/use-dict";
+import { FirstWinCard } from "./first-win-card";
 
 const LOG_PAGE_SIZE = 20;
 
@@ -124,6 +125,9 @@ export function ScriptDashboardClient({
     <div className="space-y-8">
       <Header onRefresh={refreshAll} pending={pending} />
       {error ? <ErrorState message={error} /> : null}
+
+      {/* 首单进度（第十五批） */}
+      <FirstWinCard dict={t.dashboard.firstWin} />
 
       {pending && !summary ? (
         <DashboardSkeleton label={t.dashboard.states.loadingSummary} />

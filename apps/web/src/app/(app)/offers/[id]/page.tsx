@@ -19,6 +19,8 @@ import {
 } from "@/components/entities/ui";
 import { OfferStatusSwitcher } from "@/components/entities/offer-status-switcher";
 import { OfferIntelTabs } from "@/components/offers/offer-intel-tabs";
+import { TestStopLossSection } from "@/components/offers/test-stop-loss";
+import { ClickProfitCard } from "@/components/offers/click-profit-card";
 import { getLang } from "@/i18n/lang";
 import { getDictionary } from "@/i18n/dictionaries";
 
@@ -130,6 +132,11 @@ export default async function OfferDetailPage({
       {/* Offer Intelligence (Phase 1): additive tabs, existing content above untouched. */}
       <SectionTitle>{t.ai.intel.tabs.sectionTitle}</SectionTitle>
       <OfferIntelTabs offerId={offer.id} />
+      {/* 测试止损（第七批）：kill-switch 扩展阈值 */}
+      <TestStopLossSection offerId={offer.id} />
+      {/* 每次点击盈亏（第十一批） */}
+      <SectionTitle>{t.entities.offers.clickProfit.sectionTitle}</SectionTitle>
+      <ClickProfitCard dict={t.entities.offers.clickProfit} />
     </div>
   );
 }

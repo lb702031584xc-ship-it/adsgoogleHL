@@ -340,6 +340,81 @@ describe("evaluateKillSwitch", () => {
   });
 });
 
+describe("evaluateKillSwitch — test stop-loss （第七批）", () => {
+  let ctx: Ctx;
+  beforeEach(() => {
+    ctx = baseCtx();
+  });
+
+  // profit model base CPC = $0.5 → 200 clicks = $100 spend
+  function seedClicks(offerId: string, n: number) {
+    for (let i = 0; i < n; i++) {
+      ctx.clicks.push({ id: randomUUID(), tenantId: TENANT, offerId });
+    }
+  }
+
+  it("TEST_STOPLOSS_CAP fires when spend reaches the cap", async () => {
+    const offerId = seedOffer(ctx);
+    seedConfig(ctx, offerId, { testSpendCap: 80 });
+    seedProfitModel(ctx, offerId);
+    seedClicks(offerId, 200); // $100 ≥ $80
+    const result = await evaluateKillSwitch(makeFake(ctx), offerId);
+    expect(result.triggers.map((t) => t.type)).toContain("TEST_STOPLOSS_CAP");
+  });
+
+  it("TEST_STOPLOSS_CAP does not fire below the cap", async () => {
+    const offerId = seedOffer(ctx);
+    seedConfig(ctx, offerId, { testSpendCap: 80 });
+    seedProfitModel(ctx, offerId);
+    seedClicks(offerId, 100); // $50 < $80
+    const result = await evaluateKillSwitch(makeFake(ctx), offerId);
+    expect(result.triggers.map((t) => t.type)).not.toContain(
+      "TEST_STOPLOSS_CAP"
+    );
+  });
+
+  it("TEST_STOPLOSS_ZERO_CONV fires on X spend with 0 conversions", async () => {
+    const offerId = seedOffer(ctx);
+    seedConfig(ctx, offerId, { testZeroConvSpend: 30 });
+    seedProfitModel(ctx, offerId);
+    seedClicks(offerId, 100); // $50 ≥ $30, no conversions
+    const result = await evaluateKillSwitch(makeFake(ctx), offerId);
+    expect(result.triggers.map((t) => t.type)).toContain(
+      "TEST_STOPLOSS_ZERO_CONV"
+    );
+  });
+
+  it("TEST_STOPLOSS_ZERO_CONV does not fire when a conversion exists", async () => {
+    const offerId = seedOffer(ctx);
+    seedConfig(ctx, offerId, { testZeroConvSpend: 30 });
+    seedProfitModel(ctx, offerId);
+    const clickId = randomUUID();
+    ctx.clicks.push({ id: clickId, tenantId: TENANT, offerId });
+    for (let i = 1; i < 100; i++) seedClicks(offerId, 1);
+    ctx.conversions.push({
+      id: randomUUID(),
+      tenantId: TENANT,
+      clickId,
+      deletedAt: null,
+    });
+    const result = await evaluateKillSwitch(makeFake(ctx), offerId);
+    expect(result.triggers.map((t) => t.type)).not.toContain(
+      "TEST_STOPLOSS_ZERO_CONV"
+    );
+  });
+
+  it("TEST_STOPLOSS is skipped when thresholds are unset or data missing", async () => {
+    const offerId = seedOffer(ctx);
+    seedConfig(ctx, offerId, {}); // thresholds unset
+    seedClicks(offerId, 500);
+    const result = await evaluateKillSwitch(makeFake(ctx), offerId);
+    expect(
+      result.skipped.some((s) => s.startsWith("TEST_STOPLOSS"))
+    ).toBe(true);
+    expect(result.triggers).toHaveLength(0);
+  });
+});
+
 describe("executeKillSwitch", () => {
   let ctx: Ctx;
   beforeEach(() => {

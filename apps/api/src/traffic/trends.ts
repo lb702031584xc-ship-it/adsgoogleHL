@@ -7,8 +7,10 @@
  *
  * 注意：
  * - 返回体前 5 个字符是 `)]}',` 防 XSSI 前缀，必须剥离。
- * - 机房 IP 可能被 429：任何失败（429/解析失败/无数据/网络异常）返回 null，
- *   绝不抛错。
+ * - 机房 IP 可能被 429/403：返回 { value: null, rateLimited: true }，
+ *   调用方可据此在 UI 写明"被限流"，而不是笼统的"暂无数据"。
+ * - 其他失败（解析失败/无数据/网络异常）→ { value: null, rateLimited: false }。
+ * - 失败时 console.warn 记录状态码，方便排查；绝不抛错。
  * - Redis 缓存 24h（key `traffic:trends:<geo>:<kw1,kw2>`）；redis 不可用时
  *   跳过缓存，不抛错。调用方不传 redis 则不缓存。
  *
@@ -105,16 +107,38 @@ function averageInterest(data: unknown, keywordCount: number): number | null {
   return null;
 }
 
+/** getKeywordInterest 的返回：热度值 + 是否被限流（可区分展示）。 */
+export interface TrendsInterestResult {
+  /** 平均相对热度（0-100）；null 表示暂无数据 */
+  value: number | null;
+  /**
+   * true = 请求被限流（HTTP 429/403，机房 IP 常见）；
+   * false = 其他失败（解析失败/无数据/网络异常）或成功。
+   */
+  rateLimited: boolean;
+}
+
 async function fetchTrendsInterest(
   keywords: string[],
   geo: string,
   fetchImpl: typeof fetch
-): Promise<number | null> {
+): Promise<TrendsInterestResult> {
   const comparisonItem = keywords.map((keyword) => ({
     keyword,
     geo,
     time: "today 12-m",
   }));
+
+  const limited = (status: number, stage: string): TrendsInterestResult => {
+    console.warn(
+      `[traffic][trends] ${stage} 被限流：HTTP ${status}（疑似机房 IP 被 Google 限流，免费热度不可用）`
+    );
+    return { value: null, rateLimited: true };
+  };
+  const failed = (detail: string): TrendsInterestResult => {
+    console.warn(`[traffic][trends] 获取失败：${detail}`);
+    return { value: null, rateLimited: false };
+  };
 
   // 1. explore：拿 TIMESERIES widget 的 token
   const exploreUrl =
@@ -122,17 +146,34 @@ async function fetchTrendsInterest(
     encodeURIComponent(
       JSON.stringify({ comparisonItem, category: 0, property: "" })
     );
-  const exploreRes = await fetchImpl(exploreUrl, {
-    headers: { "User-Agent": TRENDS_UA },
-  });
-  if (!exploreRes.ok) return null; // 429 等 → null
-  const exploreJson = JSON.parse(
-    stripXssiPrefix(await exploreRes.text())
-  ) as { widgets?: TrendsWidget[] };
+  let exploreRes: Response;
+  try {
+    exploreRes = await fetchImpl(exploreUrl, {
+      headers: { "User-Agent": TRENDS_UA },
+    });
+  } catch (e) {
+    return failed(`explore 网络异常：${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!exploreRes.ok) {
+    if (exploreRes.status === 429 || exploreRes.status === 403) {
+      return limited(exploreRes.status, "explore");
+    }
+    return failed(`explore HTTP ${exploreRes.status}`);
+  }
+  let exploreJson: { widgets?: TrendsWidget[] };
+  try {
+    exploreJson = JSON.parse(stripXssiPrefix(await exploreRes.text())) as {
+      widgets?: TrendsWidget[];
+    };
+  } catch {
+    return failed("explore 响应 JSON 解析失败");
+  }
   const widgets = exploreJson?.widgets;
-  if (!Array.isArray(widgets)) return null;
+  if (!Array.isArray(widgets)) return failed("explore 响应无 widgets 数组");
   const token = widgets.find((w) => w?.id === "TIMESERIES")?.token;
-  if (typeof token !== "string" || !token) return null;
+  if (typeof token !== "string" || !token) {
+    return failed("explore 响应无 TIMESERIES token");
+  }
 
   // 2. widgetdata/multiline：拿 timeline 数据
   const widgetUrl =
@@ -147,36 +188,55 @@ async function fetchTrendsInterest(
         token,
       })
     );
-  const dataRes = await fetchImpl(widgetUrl, {
-    headers: { "User-Agent": TRENDS_UA },
-  });
-  if (!dataRes.ok) return null;
-  const data = JSON.parse(stripXssiPrefix(await dataRes.text()));
-  return averageInterest(data, keywords.length);
+  let dataRes: Response;
+  try {
+    dataRes = await fetchImpl(widgetUrl, {
+      headers: { "User-Agent": TRENDS_UA },
+    });
+  } catch (e) {
+    return failed(`widgetdata 网络异常：${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!dataRes.ok) {
+    if (dataRes.status === 429 || dataRes.status === 403) {
+      return limited(dataRes.status, "widgetdata");
+    }
+    return failed(`widgetdata HTTP ${dataRes.status}`);
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(stripXssiPrefix(await dataRes.text()));
+  } catch {
+    return failed("widgetdata 响应 JSON 解析失败");
+  }
+  return { value: averageInterest(data, keywords.length), rateLimited: false };
 }
 
 /**
  * 取关键词平均相对热度（0-100，多词取各词平均）。
- * 空关键词 / 429 / 解析失败 / 无数据 / 网络异常 → null，绝不抛错。
+ * 从不抛错：空关键词 / 限流 / 解析失败 / 无数据 / 网络异常
+ * → { value: null, rateLimited }。
  */
 export async function getKeywordInterest(
   keywords: string[],
   geo = "US",
   fetchImpl: typeof fetch = fetch,
   redis?: TrendsCache
-): Promise<number | null> {
+): Promise<TrendsInterestResult> {
   const kws = keywords.map((k) => k.trim()).filter(Boolean);
-  if (kws.length === 0) return null;
+  if (kws.length === 0) return { value: null, rateLimited: false };
   const key = cacheKey(kws, geo);
 
   const cached = await readCache(redis, key);
-  if (cached !== null) return cached;
+  if (cached !== null) return { value: cached, rateLimited: false };
 
   try {
-    const value = await fetchTrendsInterest(kws, geo, fetchImpl);
-    if (value !== null) await writeCache(redis, key, value);
-    return value;
-  } catch {
-    return null;
+    const result = await fetchTrendsInterest(kws, geo, fetchImpl);
+    if (result.value !== null) await writeCache(redis, key, result.value);
+    return result;
+  } catch (e) {
+    console.warn(
+      `[traffic][trends] 未预期异常：${e instanceof Error ? e.message : String(e)}`
+    );
+    return { value: null, rateLimited: false };
   }
 }

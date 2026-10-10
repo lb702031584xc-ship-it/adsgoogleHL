@@ -1,4 +1,12 @@
 import type { FastifyInstance } from "fastify";
+
+/**
+ * Offer 指标摘要附带函数（offer-metrics.ts）。
+ * 在 prisma 模式的注册块里赋值；memory 模式下保持 undefined。
+ */
+let attachMetricsSummaries:
+  | typeof import("./offer-metrics.js").attachMetricsSummaries
+  | undefined;
 import type {
   OfferEligibilityService,
   OfferSelectionService,
@@ -233,6 +241,33 @@ export async function registerRoutes(
     // 流量需求门阈值管理 (2026-10-09)
     const { registerTrafficRoutes } = await import("./traffic.js");
     registerTrafficRoutes(app, { prisma: services.prisma });
+    // Offer 最终链接指标抓取 + 推荐指数 (2026-10-10)
+    const offerMetricsModule = await import("./offer-metrics.js");
+    attachMetricsSummaries = offerMetricsModule.attachMetricsSummaries;
+    await offerMetricsModule.registerOfferMetricsRoutes(app, {
+      prisma: services.prisma,
+    });
+    // 热销日历 (2026-10-10)
+    const { registerAmazonTrendsRoutes } = await import("./amazon-trends.js");
+    await registerAmazonTrendsRoutes(app, { prisma: services.prisma });
+    // 选品流水线 (2026-10-10)
+    const { registerAmazonPipelineRoutes } = await import("./amazon-pipeline.js");
+    await registerAmazonPipelineRoutes(app, { prisma: services.prisma });
+    // 组合测试 (2026-10-10)
+    const { registerComboTestRoutes } = await import("./amazon-combo.js");
+    await registerComboTestRoutes(app, { prisma: services.prisma });
+    // ASIN 需求异动监控 (2026-10-10)
+    const { registerAsinWatchRoutes } = await import("./amazon-asin-watch.js");
+    await registerAsinWatchRoutes(app, { prisma: services.prisma });
+    // 新手任务 (2026-10-10)
+    const { registerOnboardRoutes } = await import("./onboard.js");
+    await registerOnboardRoutes(app, { prisma: services.prisma });
+    // 教练模式 (2026-10-10)
+    const { registerCoachRoutes } = await import("./coach.js");
+    await registerCoachRoutes(app, { prisma: services.prisma });
+    // 首单仪表盘 (2026-10-10)
+    const { registerFirstWinRoutes } = await import("./first-win.js");
+    await registerFirstWinRoutes(app, { prisma: services.prisma });
   }
 
   app.get<{
@@ -276,11 +311,19 @@ export async function registerRoutes(
     Querystring: { page?: string; pageSize?: string };
   }>("/api/v1/offers", async (request) => {
     const tenantId = tenantOf(request);
-    return services.offers.list(
+    const result = await services.offers.list(
       tenantId,
       request.query.page ? Number(request.query.page) : undefined,
       request.query.pageSize ? Number(request.query.pageSize) : undefined
     );
+    // 附带推荐指数摘要（无数据时为 null；memory 模式无 prisma 时跳过）。
+    if (!services.prisma || !attachMetricsSummaries) return result;
+    const items = await attachMetricsSummaries(
+      services.prisma,
+      tenantId,
+      result.items
+    );
+    return { ...result, items };
   });
 
   app.get<{
@@ -288,7 +331,15 @@ export async function registerRoutes(
     Headers: { "x-tenant-id"?: string };
   }>("/api/v1/offers/:id", async (request) => {
     const tenantId = tenantOf(request);
-    return services.offers.getById(tenantId, request.params.id);
+    const offer = await services.offers.getById(tenantId, request.params.id);
+    if (!services.prisma || !attachMetricsSummaries)
+      return { ...offer, metricsSummary: null };
+    const [withSummary] = await attachMetricsSummaries(
+      services.prisma,
+      tenantId,
+      [offer]
+    );
+    return withSummary ?? { ...offer, metricsSummary: null };
   });
 
   app.post<{

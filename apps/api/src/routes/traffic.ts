@@ -90,9 +90,11 @@ function validateThresholdPatch(body: unknown): Partial<TrafficThresholds> {
 /** /gate 入参校验与归一化。 */
 function validateGateInput(body: unknown): {
   brand: string | null;
+  title: string | null;
   domain: string | null;
   keywords: string[];
   geo: string;
+  manualMonthlyVisits: number | null;
 } {
   const o = (body ?? {}) as Record<string, unknown>;
   const optString = (v: unknown, name: string): string | null => {
@@ -104,6 +106,7 @@ function validateGateInput(body: unknown): {
     return t ? t : null;
   };
   const brand = optString(o.brand, "brand");
+  const title = optString(o.title, "title");
   const domain = optString(o.domain, "domain");
 
   let keywords: string[] = [];
@@ -122,10 +125,21 @@ function validateGateInput(body: unknown): {
     }
   }
 
-  if (!brand && !domain && keywords.length === 0) {
-    throw new ValidationError("brand、domain、keywords 至少提供一个");
+  // 手动输入月访问量：正整数，上限 1e12；非法值直接 400。
+  let manualMonthlyVisits: number | null = null;
+  const mv = o.manualMonthlyVisits;
+  if (mv !== undefined && mv !== null && mv !== "") {
+    const n = Number(mv);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0 || n > 1e12) {
+      throw new ValidationError("manualMonthlyVisits 必须是 1~1000000000000 的正整数");
+    }
+    manualMonthlyVisits = n;
   }
-  return { brand, domain, keywords, geo: optString(o.geo, "geo") ?? "US" };
+
+  if (!brand && !title && !domain && keywords.length === 0 && manualMonthlyVisits === null) {
+    throw new ValidationError("brand、title、domain、keywords、manualMonthlyVisits 至少提供一个");
+  }
+  return { brand, title, domain, keywords, geo: optString(o.geo, "geo") ?? "US", manualMonthlyVisits };
 }
 
 /** /gate 限流：20 次/分钟/tenant。 */
@@ -241,9 +255,11 @@ export function registerTrafficRoutes(
   app.post<{
     Body: {
       brand?: unknown;
+      title?: unknown;
       domain?: unknown;
       keywords?: unknown;
       geo?: unknown;
+      manualMonthlyVisits?: unknown;
     };
   }>("/api/v1/traffic/gate", async (request) => {
     const info = await requireSession(deps, request);
@@ -258,12 +274,13 @@ export function registerTrafficRoutes(
     const thresholds = await getTrafficThresholds(prisma);
     return evaluateTrafficGate({
       brand: input.brand,
-      title: "",
+      title: input.title ?? "",
       keywords: input.keywords,
       thresholds,
       prisma,
       domain: input.domain,
       geo: input.geo,
+      manualMonthlyVisits: input.manualMonthlyVisits,
     });
   });
 }

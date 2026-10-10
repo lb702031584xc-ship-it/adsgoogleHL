@@ -86,6 +86,8 @@ export function MonitorOffersTab({
   const [checking, setChecking] = useState(false);
   const [gateResult, setGateResult] = useState<TrafficGate | null>(null);
   const [gateOpen, setGateOpen] = useState(false);
+  /** 最近一次检测的域名，供手动区"重新检测"复用。 */
+  const [lastGateDomain, setLastGateDomain] = useState<string>("");
 
   /** datalist 建议：已有 offer 的网络名（去重）+ 常用常量。 */
   const suggestions = useMemo(() => {
@@ -156,6 +158,28 @@ export function MonitorOffersTab({
     try {
       // 返利 offer 的官网就是商家域名：直接传 domain 跳过官网检测。
       const res = await checkTrafficGateAction({ domain });
+      if (res.ok) {
+        setGateResult(res.data);
+        setGateOpen(true);
+        setLastGateDomain(domain);
+      } else {
+        setError(res.error);
+      }
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  /** 流量门手动区"重新检测"：品牌名/手动月访问量至少提供一个。 */
+  async function onRecheckGate(input: { brand?: string; manualMonthlyVisits?: number }) {
+    if (!lastGateDomain) return;
+    setChecking(true);
+    try {
+      const res = await checkTrafficGateAction({
+        domain: lastGateDomain,
+        brand: input.brand,
+        manualMonthlyVisits: input.manualMonthlyVisits,
+      });
       if (res.ok) {
         setGateResult(res.data);
         setGateOpen(true);
@@ -251,6 +275,8 @@ export function MonitorOffersTab({
             dict={dict.trafficGate}
             gate={gateResult}
             onClose={() => setGateOpen(false)}
+            onRecheck={onRecheckGate}
+            recheckBusy={checking}
           />
         ) : null}
       </section>
@@ -326,11 +352,42 @@ function TrafficGatePanel({
   dict,
   gate,
   onClose,
+  onRecheck,
+  recheckBusy,
 }: {
   dict: CashbackMonitorDict["offers"]["trafficGate"];
   gate: TrafficGate;
   onClose: () => void;
+  onRecheck?: (input: { brand?: string; manualMonthlyVisits?: number }) => void;
+  recheckBusy?: boolean;
 }) {
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null);
+  const [brand, setBrand] = useState("");
+  const [visits, setVisits] = useState("");
+  const [manualError, setManualError] = useState<string | null>(null);
+  const open = manualOpen ?? gate.passed === null;
+
+  function submitManual() {
+    if (!onRecheck) return;
+    const b = brand.trim();
+    const vRaw = visits.trim();
+    let v: number | undefined;
+    if (vRaw) {
+      const n = Number(vRaw);
+      if (!Number.isInteger(n) || n <= 0 || n > 1e12) {
+        setManualError(dict.manualInvalid);
+        return;
+      }
+      v = n;
+    }
+    if (!b && v === undefined) {
+      setManualError(dict.manualInvalid);
+      return;
+    }
+    setManualError(null);
+    onRecheck({ ...(b ? { brand: b } : {}), ...(v !== undefined ? { manualMonthlyVisits: v } : {}) });
+  }
+
   const pill =
     gate.passed === true
       ? { text: dict.passed, cls: "bg-emerald-100 text-emerald-800" }
@@ -356,6 +413,9 @@ function TrafficGatePanel({
             : dict.officialSiteNotFound
           : dict.officialSiteSkipped}
       </p>
+      {gate.officialSite?.reason ? (
+        <p className="mt-1 text-xs text-ink/55">{gate.officialSite.reason}</p>
+      ) : null}
       {gate.signals.length > 0 ? (
         <div className="mt-3">
           <p className="text-xs font-medium text-ink/60">{dict.signals}</p>
@@ -385,6 +445,57 @@ function TrafficGatePanel({
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+      {onRecheck ? (
+        <div className="mt-3 rounded-lg border border-dashed border-ink/20 p-3">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between text-sm font-medium text-ink"
+            onClick={() => setManualOpen(!open)}
+            aria-expanded={open}
+          >
+            <span>{dict.manualTitle}</span>
+            <span aria-hidden className="text-xs text-ink/50">
+              {open ? "▲" : "▼"}
+            </span>
+          </button>
+          {open ? (
+            <div className="mt-2 space-y-2">
+              <div>
+                <label className="mb-1 block text-xs text-ink/60">{dict.manualBrandLabel}</label>
+                <input
+                  className="w-full rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-sm text-ink"
+                  placeholder={dict.manualBrandPlaceholder}
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                  maxLength={64}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-ink/60">{dict.manualVisitsLabel}</label>
+                <input
+                  className="w-full rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-sm text-ink"
+                  placeholder={dict.manualVisitsPlaceholder}
+                  value={visits}
+                  onChange={(e) => setVisits(e.target.value)}
+                  inputMode="numeric"
+                />
+              </div>
+              <p className="text-xs text-ink/50">{dict.manualHint}</p>
+              {manualError ? (
+                <p className="text-xs text-red-600">{manualError}</p>
+              ) : null}
+              <button
+                type="button"
+                className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+                disabled={recheckBusy}
+                onClick={submitManual}
+              >
+                {recheckBusy ? dict.rechecking : dict.recheck}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

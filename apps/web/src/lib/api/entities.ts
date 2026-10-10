@@ -80,6 +80,12 @@ export interface Ad {
   updatedAt: string;
 }
 
+export interface MetricsSummary {
+  score: number | null;
+  grade: string | null;
+  fetchedAt: string;
+}
+
 export interface Offer {
   id: string;
   tenantId: string;
@@ -92,6 +98,8 @@ export interface Offer {
   endsAt?: string;
   createdAt: string;
   updatedAt: string;
+  /** 推荐指数摘要（第三批；无数据时为 null/缺失）。 */
+  metricsSummary?: MetricsSummary | null;
 }
 
 export interface LandingPage {

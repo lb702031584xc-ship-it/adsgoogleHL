@@ -16,6 +16,8 @@ import {
 } from "@/components/entities/ui";
 import { getLang } from "@/i18n/lang";
 import { getDictionary } from "@/i18n/dictionaries";
+import { OfferScoreCell } from "@/components/offers/offer-score-cell";
+import { TestSpendCell } from "@/components/offers/test-spend-cell";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +49,48 @@ export default async function OffersPage({
       render: (o) => <StatusBadge value={o.status} />,
     },
     { header: t.entities.offers.columns.priority, render: (o) => String(o.priority) },
+    {
+      header: t.entities.offers.scoreColumn,
+      render: (o) => (
+        <OfferScoreCell
+          offerId={o.id}
+          initial={o.metricsSummary}
+          dict={{
+            scoreColumn: t.entities.offers.scoreColumn,
+            fetchMetrics: t.entities.offers.fetchMetrics,
+            fetching: t.entities.offers.fetching,
+            noData: t.entities.offers.scoreNoData,
+            breakdownTitle: t.entities.offers.breakdownTitle,
+            rating: t.entities.offers.rating,
+            reviewCount: t.entities.offers.reviewCount,
+            soldCount: t.entities.offers.soldCount,
+            notFetched: t.entities.offers.notFetched,
+            formulaHint: t.entities.offers.formulaHint,
+            gradeStrong: t.entities.offers.gradeStrong,
+            gradeGood: t.entities.offers.gradeGood,
+            gradeCaution: t.entities.offers.gradeCaution,
+            gradeAvoid: t.entities.offers.gradeAvoid,
+            fetchedAt: t.entities.offers.fetchedAt,
+            failuresLabel: t.entities.offers.failuresLabel,
+          }}
+        />
+      ),
+      className: "whitespace-nowrap",
+    },
+    {
+      header: t.entities.offers.testStopLoss.listColumn,
+      render: (o) => (
+        <TestSpendCell
+          offerId={o.id}
+          dict={{
+            column: t.entities.offers.testStopLoss.listColumn,
+            spent: t.entities.offers.testStopLoss.spent,
+            noData: t.entities.offers.scoreNoData,
+          }}
+        />
+      ),
+      className: "whitespace-nowrap",
+    },
     {
       header: t.entities.offers.columns.destinationUrl,
       render: (o) => (

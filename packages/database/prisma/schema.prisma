@@ -223,6 +223,17 @@ model Tenant {
   redirectChainChecks   RedirectChainCheck[]
   cashbackCompareGroups CashbackCompareGroup[]
   cashbackRateSnapshots CashbackRateSnapshot[]
+  /// Offer 最终链接指标（第三批，additive）
+  offerMetrics          OfferMetrics[]
+  /// 选品流水线运行记录（第五批，additive）
+  productPipelineRuns   ProductPipelineRun[]
+  denylistEntries       DenylistEntry[]
+  comboTestRuns         ComboTestRun[]
+  asinWatches           AsinWatch[]
+  asinSnapshots         AsinSnapshot[]
+  onboardTasks          OnboardTask[]
+  coachSetting          CoachSetting?
+  manualSpend           ManualSpend?
 
   @@map("tenants")
 }
@@ -420,6 +431,8 @@ model Offer {
   trackingLinkOffers TrackingLinkOffer[]
   offerPolicies      OfferPolicy[]
   offerRiskScores    OfferRiskScore[]
+  /// Offer 最终链接指标（第三批，一对一）
+  offerMetrics       OfferMetrics?
   profitModels       ProfitModel[]
   /// Phase 3 Optimization — A/B experiments + kill switch (additive, no existing behavior changed)
   experiments        Experiment[]
@@ -1231,6 +1244,9 @@ model KillSwitchConfig {
   minExpectedProfit         Decimal? @map("min_expected_profit") @db.Decimal(12, 2)
   minCvr                    Float?   @map("min_cvr")
   maxPolicyRisk             Int?     @map("max_policy_risk")
+  /// 测试止损（第七批）：花费上限；X 花费零转化
+  testSpendCap              Decimal? @map("test_spend_cap") @db.Decimal(12, 2)
+  testZeroConvSpend         Decimal? @map("test_zero_conv_spend") @db.Decimal(12, 2)
   pauseOnMerchantTerminated Boolean  @default(true) @map("pause_on_merchant_terminated")
   createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                 DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -1767,4 +1783,152 @@ model WeeklyReport {
   @@unique([tenantId, weekStart, weekEnd])
   @@index([tenantId])
   @@map("weekly_reports")
+}
+
+/// Offer 最终链接指标抓取 + 推荐指数（第三批）。
+model OfferMetrics {
+  id        String   @id @db.Uuid
+  offerId   String   @unique @map("offer_id") @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  /// 抓取到的指标 JSON（OfferMetrics 结构）。
+  metrics   Json
+  /// 推荐指数 0-100；无可用指标时为 null。
+  score     Int?
+  /// 等级：strong / good / caution / avoid。
+  grade     String?
+  fetchedAt DateTime @map("fetched_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  offer  Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("offer_metrics")
+}
+
+/// 选品流水线运行记录（第五批）：存每道门结果 JSON + 值得测试指数。
+/// 否定清单（批次5追加）：用户维护的"别碰名单"，命中直接杀。
+model DenylistEntry {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  /// asin | keyword | brand | category
+  type      String   @db.VarChar(16)
+  value     String   @db.VarChar(256)
+  reason    String?  @db.VarChar(512)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, type, value])
+  @@index([tenantId])
+  @@map("denylist_entries")
+}
+
+/// 组合测试（第九批）：一次测 5-10 个品的榜单页测试。
+model ComboTestRun {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  name          String   @db.VarChar(200)
+  /// 渲染好的榜单 HTML（复用 builtin-listicle 模板）
+  htmlContent   String?  @map("html_content")
+  /// [{asin,title,brand,price,rating,reviewCount,offerId,trackingLinkId,publicId,clickUrl}]
+  items         Json
+  testDays      Int      @default(3) @map("test_days")
+  targetClicks  Int      @default(200) @map("target_clicks")
+  status        String   @default("running") @db.VarChar(16)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("combo_test_runs")
+}
+
+/// ASIN 跟踪（第十批）：用户一键跟踪的 ASIN。
+/// 教练模式设置（第十三批）：每 tenant 一行；默认开启。
+/// 手动录入累计花费（第十五批）：Campaign 模型无花费字段，花费走手动录入。
+model ManualSpend {
+  tenantId  String   @id @map("tenant_id") @db.Uuid
+  total     Float    @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("manual_spend")
+}
+
+model CoachSetting {
+  tenantId         String   @id @map("tenant_id") @db.Uuid
+  enabled          Boolean  @default(true)
+  dailyBudgetLimit Float?   @map("daily_budget_limit")
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("coach_settings")
+}
+
+model AsinWatch {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  asin      String   @db.VarChar(32)
+  title     String?  @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, asin])
+  @@index([tenantId])
+  @@map("asin_watches")
+}
+
+/// ASIN 快照（第十批）：每日快照 reviewCount/rating。
+/// PA-API 实际返回无 BSR 字段（已查 amazon-adapter.ts：只有 CustomerReviews.Count/StarRating），
+/// 用评论数增速做需求代理；原始响应当 JSON 存 rawJson。
+model AsinSnapshot {
+  id          String   @id @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  asin        String   @db.VarChar(32)
+  capturedAt  DateTime @default(now()) @map("captured_at") @db.Timestamptz(3)
+  reviewCount Int?     @map("review_count")
+  rating      Float?
+  price       Float?
+  rawJson     Json?    @map("raw_json")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, asin, capturedAt])
+  @@map("asin_snapshots")
+}
+
+/// 新手任务（第十二批）："7 天跑起来"任务流。
+model OnboardTask {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  day       Int
+  taskKey   String    @map("task_key") @db.VarChar(64)
+  deepLink  String?   @map("deep_link") @db.VarChar(256)
+  doneAt    DateTime? @map("done_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, taskKey])
+  @@index([tenantId])
+  @@map("onboard_tasks")
+}
+
+model ProductPipelineRun {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String?
+  itemCount Int      @map("item_count")
+  options   Json
+  results   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("product_pipeline_runs")
 }
