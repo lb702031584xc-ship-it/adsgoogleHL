@@ -8,11 +8,14 @@ import {
   runAmazonDiscovery,
   importAmazonProducts,
   parseAmazonProductUrl,
+  getKeepaStatus,
+  validateKeepa,
   getTrafficThresholds,
   updateTrafficThresholds,
   type AmazonDiscoveryCriteria,
   type TrafficThresholds,
   type ParsedAmazonUrl,
+  type KeepaValidateItem,
 } from "./ai";
 import type { AmazonScoredProduct } from "./amazon-types";
 
@@ -90,5 +93,28 @@ export async function parseAmazonProductUrlAction(
     return { ok: true, data };
   } catch (e) {
     return mapError(e, "链接解析失败，请检查链接后重试。");
+  }
+}
+
+export async function getKeepaStatusAction(): Promise<
+  AmazonActionResult<{ hasKey: boolean }>
+> {
+  try {
+    const data = await getKeepaStatus();
+    return { ok: true, data };
+  } catch (e) {
+    return mapError(e, "获取 Keepa 配置状态失败。");
+  }
+}
+
+export async function validateKeepaAction(
+  asins: string[],
+  country?: string
+): Promise<AmazonActionResult<{ results: KeepaValidateItem[] }>> {
+  try {
+    const data = await validateKeepa(asins, country);
+    return { ok: true, data };
+  } catch (e) {
+    return mapError(e, "Keepa 筛选失败，请稍后重试。");
   }
 }

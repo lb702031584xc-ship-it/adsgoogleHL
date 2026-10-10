@@ -11,5 +11,5 @@ export const dynamic = "force-dynamic";
 export default async function AmazonManualGuidePage() {
   const lang = await getLang();
   const l = lang === "en" ? "en" : "zh";
-  return <AmazonManualGuideClient dict={l === "en" ? en : zh} />;
+  return <AmazonManualGuideClient dict={l === "en" ? en : zh} lang={l} />;
 }

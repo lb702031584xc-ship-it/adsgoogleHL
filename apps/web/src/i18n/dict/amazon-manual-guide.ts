@@ -47,6 +47,27 @@ export interface AmazonManualGuideDict {
   keepaFailTitle: string;
   keepaPass: string[];
   keepaFail: string[];
+  keepaAutoTitle: string;
+  keepaAutoHint: string;
+  keepaAutoButton: string;
+  keepaAutoRunning: string;
+  keepaNoKey: string;
+  keepaNoKeyHint: string;
+  keepaNoAsin: string;
+  keepaVerdictPass: string;
+  keepaVerdictKill: string;
+  keepaVerdictUnknown: string;
+  keepaApplyButton: string;
+  keepaApplyConfirm: string;
+  keepaApplied: string;
+  keepaConfirmYes: string;
+  keepaConfirmNo: string;
+  keepaMetricDrop: string;
+  keepaMetricRank: string;
+  keepaMetricReviews: string;
+  keepaMetricStockout: string;
+  keepaMetricNa: string;
+  keepaReasons: Record<string, string>;
   finalPickTitle: string;
   finalPickHint: string;
   goPipeline: string;
@@ -103,6 +124,39 @@ export const zh: AmazonManualGuideDict = {
     "评论区出现大量“质量差”“与描述不符”",
     "长期断货（供应链不稳，测了也白测）",
   ],
+  keepaAutoTitle: "一键自动筛选",
+  keepaAutoHint:
+    "已配置 Keepa API Key？点一下，系统逐个查候选清单的 ASIN，按上面的标准自动判通过/淘汰（每次验证消耗 Keepa token）。",
+  keepaAutoButton: "一键自动筛选",
+  keepaAutoRunning: "筛选中…（逐个查询，请稍候）",
+  keepaNoKey: "未配置 Keepa API Key",
+  keepaNoKeyHint:
+    "去 管理 → AI 设置 → Keepa API Key 配置（keepa.com 申请付费 key 后填入）。",
+  keepaNoAsin: "候选清单里没有 ASIN，先在扫榜单步骤把 ASIN 记下来。",
+  keepaVerdictPass: "通过",
+  keepaVerdictKill: "淘汰",
+  keepaVerdictUnknown: "未知",
+  keepaApplyButton: "应用结果：移除淘汰项",
+  keepaApplyConfirm: "确定移除 {n} 个淘汰项吗？",
+  keepaApplied: "已移除 {n} 个淘汰项。",
+  keepaConfirmYes: "确认移除",
+  keepaConfirmNo: "取消",
+  keepaMetricDrop: "30 天跌幅",
+  keepaMetricRank: "90 天排名 max/min",
+  keepaMetricReviews: "90 天评论增长",
+  keepaMetricStockout: "90 天断货",
+  keepaMetricNa: "无数据",
+  keepaReasons: {
+    price_drop: "30 天跌幅 {v}%（>25%，利润守不住）",
+    rank_swing: "90 天排名 max/min {v} 倍（>10 倍，大起大落）",
+    stockout: "90 天断货 {v} 天（>30 天，供应链不稳）",
+    pass: "价格/排名/评论/库存四项均达标",
+    no_data: "Keepa 无此产品数据",
+    insufficient: "历史数据不足，无法判定",
+    rate_limited: "Keepa 限流，稍后重试",
+    tokens_exhausted: "Keepa token 不足",
+    fetch_failed: "Keepa 请求失败",
+  },
   finalPickTitle: "最终 3 个测试品",
   finalPickHint:
     "从候选清单里挑出综合评分最高的 3 个，记下 ASIN，然后一键送入选品流水线跑 6 道门评估。",
@@ -268,6 +322,39 @@ export const en: AmazonManualGuideDict = {
     "Many reviews complaining about “poor quality” / “not as described”",
     "Long out-of-stock periods (unstable supply — testing is wasted)",
   ],
+  keepaAutoTitle: "Auto-screen with Keepa",
+  keepaAutoHint:
+    "Keepa API key configured? One click checks each candidate ASIN against the criteria above (each validation consumes Keepa tokens).",
+  keepaAutoButton: "Auto-screen now",
+  keepaAutoRunning: "Screening… (querying one by one, please wait)",
+  keepaNoKey: "Keepa API key not configured",
+  keepaNoKeyHint:
+    "Go to Admin → AI Settings → Keepa API key (get a paid key at keepa.com).",
+  keepaNoAsin: "No ASINs in the candidate list — record ASINs in the list-scanning step first.",
+  keepaVerdictPass: "Pass",
+  keepaVerdictKill: "Drop",
+  keepaVerdictUnknown: "Unknown",
+  keepaApplyButton: "Apply: remove dropped items",
+  keepaApplyConfirm: "Remove {n} dropped items?",
+  keepaApplied: "Removed {n} dropped items.",
+  keepaConfirmYes: "Confirm",
+  keepaConfirmNo: "Cancel",
+  keepaMetricDrop: "30d price drop",
+  keepaMetricRank: "90d rank max/min",
+  keepaMetricReviews: "90d review growth",
+  keepaMetricStockout: "90d out-of-stock",
+  keepaMetricNa: "no data",
+  keepaReasons: {
+    price_drop: "30-day drop {v}% (>25% — margin won't hold)",
+    rank_swing: "90-day rank max/min {v}x (>10x — unstable)",
+    stockout: "Out of stock {v} days in 90d (>30 — unstable supply)",
+    pass: "Price, rank, reviews and stock all passed",
+    no_data: "No Keepa data for this product",
+    insufficient: "Insufficient history — cannot judge",
+    rate_limited: "Keepa rate limited, retry later",
+    tokens_exhausted: "Keepa tokens exhausted",
+    fetch_failed: "Keepa request failed",
+  },
   finalPickTitle: "Final 3 test products",
   finalPickHint:
     "Pick the top 3 from your candidate list, note their ASINs, then send them to the product pipeline for the 6-gate evaluation.",

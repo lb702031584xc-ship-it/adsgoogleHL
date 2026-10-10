@@ -268,6 +268,9 @@ export async function registerRoutes(
     // 首单仪表盘 (2026-10-10)
     const { registerFirstWinRoutes } = await import("./first-win.js");
     await registerFirstWinRoutes(app, { prisma: services.prisma });
+    // Keepa 自动筛选 (2026-10-10)
+    const { registerKeepaRoutes } = await import("./keepa.js");
+    await registerKeepaRoutes(app, { prisma: services.prisma });
   }
 
   app.get<{

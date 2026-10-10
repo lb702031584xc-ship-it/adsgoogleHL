@@ -716,6 +716,12 @@ export const zh = {
         dataforseoHelp:
           "付费 key，用于获取关键词月搜索量。未配置时，DataForSEO 信号显示“暂无数据”。",
       },
+      keepa: {
+        title: "Keepa API Key",
+        hint: "用于手动选品 SOP 的 Keepa 自动筛选（Day5）。去 keepa.com 申请付费 API key 后填入；每次验证按 ASIN 消耗 Keepa token。",
+        keyLabel: "Keepa API Key",
+        keyPlaceholder: "留空则保持现有配置",
+      },
     },
   },
   lander: {
@@ -1569,6 +1575,12 @@ export const en: typeof zh = {
         dataforseoPassword: "DataForSEO password",
         dataforseoHelp:
           'Paid key, used to fetch keyword monthly search volume. When unset, the DataForSEO signal shows "no data".',
+      },
+      keepa: {
+        title: "Keepa API key",
+        hint: "Used by the manual SOP's Keepa auto-screening (Day 5). Get a paid API key at keepa.com; each validation consumes Keepa tokens per ASIN.",
+        keyLabel: "Keepa API key",
+        keyPlaceholder: "Leave empty to keep the current configuration",
       },
     },
   },

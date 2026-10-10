@@ -59,6 +59,8 @@ const SETTING_API_KEY_ENC = "llm.apiKeyEnc";
 const SETTING_OWNED_DOMAINS = "compliance.ownedDomains";
 const SETTING_AMAZON_PAAPI_ENC = "amazon.paapiEnc";
 /** 流量需求门数据源凭证（加密存储）：SimilarWeb / DataForSEO。 */
+/** Keepa 自动筛选 API Key（加密存储，keepa.com 申请付费 key）。 */
+const SETTING_KEEPA_API_KEY_ENC = "keepa.apiKeyEnc";
 const SETTING_TRAFFIC_SIMILARWEB = "traffic.similarwebKey";
 const SETTING_TRAFFIC_DATAFORSEO_LOGIN = "traffic.dataforseoLogin";
 const SETTING_TRAFFIC_DATAFORSEO_PASSWORD = "traffic.dataforseoPassword";
@@ -101,6 +103,8 @@ interface LlmSettings {
   trafficDataforseoLoginEnc?: string;
   /** Encrypted DataForSEO password (traffic gate, paid). */
   trafficDataforseoPasswordEnc?: string;
+  /** Encrypted Keepa API key (Keepa auto-screening, paid). */
+  keepaApiKeyEnc?: string;
 }
 
 async function readSettings(prisma: PrismaClient): Promise<LlmSettings> {
@@ -117,6 +121,7 @@ async function readSettings(prisma: PrismaClient): Promise<LlmSettings> {
       out.trafficDataforseoLoginEnc = r.value;
     else if (r.key === SETTING_TRAFFIC_DATAFORSEO_PASSWORD)
       out.trafficDataforseoPasswordEnc = r.value;
+    else if (r.key === SETTING_KEEPA_API_KEY_ENC) out.keepaApiKeyEnc = r.value;
     else if (r.key === SETTING_OWNED_DOMAINS) {
       out.ownedDomains = r.value
         .split(",")
@@ -171,6 +176,8 @@ export async function registerAiRoutes(
       hasTrafficDataforseo: !!(
         s.trafficDataforseoLoginEnc && s.trafficDataforseoPasswordEnc
       ),
+      /** Keepa API Key 是否已配置（只返回布尔值，永不返回明文）。 */
+      hasKeepa: !!s.keepaApiKeyEnc,
     };
   });
 
@@ -183,6 +190,8 @@ export async function registerAiRoutes(
       apiKey?: unknown;
       ownedDomains?: unknown;
       amazonPaapi?: unknown;
+      /** Keepa API Key（非空字符串才加密写入；空表示不修改已有值）。 */
+      keepaKey?: unknown;
       /** 流量数据源凭证：{ similarwebKey?, dataforseoLogin?, dataforseoPassword? } */
       traffic?: unknown;
     };
@@ -247,6 +256,19 @@ export async function registerAiRoutes(
         throw new ValidationError("amazonPaapi must be an object");
       }
     }
+    if (body.keepaKey !== undefined) {
+      // Keepa API Key：只有非空字符串才加密写入；空字符串/null/缺失表示不修改已有值。
+      if (typeof body.keepaKey !== "string") {
+        throw new ValidationError("keepaKey must be a string");
+      }
+      if (body.keepaKey.trim().length > 0) {
+        const pepper = assertAiSettingsPepperConfigured();
+        updates[SETTING_KEEPA_API_KEY_ENC] = encryptSecret(
+          body.keepaKey.trim(),
+          pepper
+        );
+      }
+    }
     let trafficSectionProvided = false;
     if (body.traffic !== undefined) {
       // 流量数据源凭证（SimilarWeb / DataForSEO，付费 key）。
@@ -308,6 +330,7 @@ export async function registerAiRoutes(
       hasTrafficDataforseo: !!(
         s.trafficDataforseoLoginEnc && s.trafficDataforseoPasswordEnc
       ),
+      hasKeepa: !!s.keepaApiKeyEnc,
     };
   });
 

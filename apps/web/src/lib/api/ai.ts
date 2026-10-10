@@ -78,6 +78,8 @@ export interface AiSettings {
   /** 后端返回的流量信号 key 配置状态（后端未返回时为 undefined） */
   hasTrafficSimilarweb?: boolean;
   hasTrafficDataforseo?: boolean;
+  /** Keepa API Key 配置状态（后端未返回时为 undefined） */
+  hasKeepa?: boolean;
 }
 
 export interface AnalyzeInput {
@@ -113,6 +115,11 @@ export interface SaveSettingsInput {
     dataforseoLogin?: string;
     dataforseoPassword?: string;
   } | null;
+  /**
+   * Keepa API Key（keepa.com 付费 key，用于 Day5 自动筛选）。
+   * 非空字符串才加密写入；undefined 表示不修改已有值。
+   */
+  keepaKey?: string;
 }
 
 export type RestrictionValue = "allowed" | "forbidden" | "restricted" | "unknown";
@@ -372,8 +379,7 @@ export async function importAmazonProducts(
   );
 }
 
-/** 解析 Amazon 产品链接：提取 ASIN + slug 产品名（纯本地解析；BSR 拿不到） */
-export interface ParsedAmazonUrl {
+/** 解析 Amazon 产品链接：提取 ASIN + slug 产品名（纯本地解析；BSR 拿不到） */export interface ParsedAmazonUrl {
   asin: string | null;
   name: string | null;
   nameSource: "slug" | "none";
@@ -383,6 +389,35 @@ export async function parseAmazonProductUrl(url: string): Promise<ParsedAmazonUr
   return aiFetch<ParsedAmazonUrl>("/api/v1/amazon/parse-url", {
     method: "POST",
     body: JSON.stringify({ url }),
+  });
+}
+
+/** Keepa 自动筛选单项结果。 */
+export interface KeepaValidateItem {
+  asin: string;
+  verdict: "pass" | "kill" | "unknown";
+  reasons: Array<{ code: string; detail: string }>;
+  metrics: {
+    priceDrop30dPct: number | null;
+    rankMaxMinRatio90d: number | null;
+    reviewGrowth90d: number | null;
+    stockoutDays90d: number | null;
+  };
+}
+
+/** Keepa API Key 是否已配置。 */
+export async function getKeepaStatus(): Promise<{ hasKey: boolean }> {
+  return aiFetch<{ hasKey: boolean }>("/api/v1/keepa/status");
+}
+
+/** Keepa 自动筛选：逐个 ASIN 查官方 API 并按规则判 pass/kill/unknown。 */
+export async function validateKeepa(
+  asins: string[],
+  country?: string
+): Promise<{ results: KeepaValidateItem[] }> {
+  return aiFetch<{ results: KeepaValidateItem[] }>("/api/v1/keepa/validate", {
+    method: "POST",
+    body: JSON.stringify({ asins, country }),
   });
 }
 

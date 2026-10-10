@@ -30,6 +30,8 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
   const [dataforseoPassword, setDataforseoPassword] = useState("");
   const [hasSimilarweb, setHasSimilarweb] = useState(initial.hasTrafficSimilarweb === true);
   const [hasDataforseo, setHasDataforseo] = useState(initial.hasTrafficDataforseo === true);
+  const [keepaKey, setKeepaKey] = useState("");
+  const [hasKeepa, setHasKeepa] = useState(initial.hasKeepa === true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +76,7 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
                 dataforseoPassword: dataforseoPassword.trim() || undefined,
               }
             : undefined,
+        keepaKey: keepaKey.trim() || undefined,
       });
       if (res.ok) {
         setMessage(t.ai.admin.settings.saved);
@@ -95,6 +98,10 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
           setHasDataforseo(true);
           setDataforseoLogin("");
           setDataforseoPassword("");
+        }
+        if (keepaKey.trim()) {
+          setHasKeepa(true);
+          setKeepaKey("");
         }
       } else {
         setError(res.error);
@@ -343,6 +350,44 @@ export function AiSettingsForm({ initial }: { initial: AiSettings }) {
               <p className="mt-1 text-xs text-ink/55">
                 {t.ai.admin.settings.traffic.dataforseoHelp}
               </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 border-t border-ink/10 pt-5">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-ink">
+              {t.ai.admin.settings.keepa.title}
+            </h3>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                hasKeepa
+                  ? "bg-green-100 text-green-800"
+                  : "bg-ink/10 text-ink/60"
+              }`}
+            >
+              {hasKeepa
+                ? t.ai.admin.settings.configuredBadge
+                : t.ai.admin.settings.notConfiguredBadge}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-ink/55">
+            {t.ai.admin.settings.keepa.hint}
+          </p>
+          <div className="mt-4 space-y-4">
+            <div>
+              <label className={labelClass} htmlFor="keepa-key">
+                {t.ai.admin.settings.keepa.keyLabel}
+              </label>
+              <input
+                id="keepa-key"
+                type="password"
+                value={keepaKey}
+                onChange={(e) => setKeepaKey(e.target.value)}
+                placeholder={t.ai.admin.settings.keepa.keyPlaceholder}
+                autoComplete="off"
+                className={inputClass}
+              />
             </div>
           </div>
         </div>

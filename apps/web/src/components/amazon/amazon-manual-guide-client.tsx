@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { AmazonManualGuideDict } from "@/i18n/dict/amazon-manual-guide";
-import { parseAmazonProductUrlAction } from "@/lib/api/amazon-actions";
+import {
+  parseAmazonProductUrlAction,
+  getKeepaStatusAction,
+  validateKeepaAction,
+} from "@/lib/api/amazon-actions";
+import type { KeepaValidateItem } from "@/lib/api/ai";
 
 const LS_CHECKS = "adlinklab-manual-guide-checks";
 const LS_CATS = "adlinklab-manual-guide-cats";
@@ -39,6 +44,236 @@ function loadJson<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Day5 Keepa 一键自动筛选：读候选清单的 ASIN 列 → 调 /api/v1/keepa/validate
+ * → 展示每项 verdict/原因/关键指标 → 二次确认后把淘汰项从候选清单移除。
+ * 无 key 时按钮 disabled 并指引去 AI 设置配置。
+ */
+function KeepaAutoScreen({
+  d,
+  lang,
+  candidates,
+  country,
+  onRemoveAsins,
+}: {
+  d: AmazonManualGuideDict;
+  lang: string;
+  candidates: CandidateRow[];
+  country: string;
+  onRemoveAsins: (asins: string[]) => void;
+}) {
+  const [hasKey, setHasKey] = useState<boolean | null>(null);
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState<KeepaValidateItem[]>([]);
+  const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [appliedMsg, setAppliedMsg] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    getKeepaStatusAction().then((res) => {
+      if (alive) setHasKey(res.ok ? res.data.hasKey : false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const asins = useMemo(() => {
+    const out: string[] = [];
+    for (const c of candidates) {
+      const a = c.asin.trim().toUpperCase();
+      if (/^[A-Z0-9]{10}$/.test(a) && !out.includes(a)) out.push(a);
+    }
+    return out;
+  }, [candidates]);
+
+  const run = async () => {
+    if (running || asins.length === 0) return;
+    setRunning(true);
+    setError("");
+    setResults([]);
+    setConfirming(false);
+    setAppliedMsg("");
+    try {
+      const res = await validateKeepaAction(asins, country);
+      if (!res.ok) {
+        setError(res.error);
+        // 后端提示未配置 key 时，刷新按钮状态
+        if (res.error.includes("Keepa API Key")) setHasKey(false);
+        return;
+      }
+      setResults(res.data.results);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const killed = results.filter((r) => r.verdict === "kill");
+
+  const formatReason = (
+    r: { code: string; detail: string },
+    m: KeepaValidateItem["metrics"]
+  ): string => {
+    if (lang !== "en") return r.detail;
+    const tpl = d.keepaReasons[r.code] ?? r.detail;
+    const v =
+      r.code === "price_drop"
+        ? m.priceDrop30dPct
+        : r.code === "rank_swing"
+          ? m.rankMaxMinRatio90d
+          : r.code === "stockout"
+            ? m.stockoutDays90d
+            : null;
+    return tpl.replace("{v}", v === null || v === undefined ? "?" : String(v));
+  };
+
+  const fmtDrop = (v: number | null) =>
+    v === null || v === undefined ? d.keepaMetricNa : `${v}%`;
+  const fmtRank = (v: number | null) =>
+    v === null || v === undefined ? d.keepaMetricNa : `×${v}`;
+  const fmtReviews = (v: number | null) =>
+    v === null || v === undefined
+      ? d.keepaMetricNa
+      : v >= 0
+        ? `+${v}`
+        : `${v}`;
+  const fmtStockout = (v: number | null) =>
+    v === null || v === undefined
+      ? d.keepaMetricNa
+      : lang === "en"
+        ? `${v}d`
+        : `${v} 天`;
+
+  const verdictBadge = (verdict: KeepaValidateItem["verdict"]) => {
+    const cls =
+      verdict === "pass"
+        ? "bg-emerald-100 text-emerald-800"
+        : verdict === "kill"
+          ? "bg-red-100 text-red-800"
+          : "bg-ink/10 text-ink/60";
+    const label =
+      verdict === "pass"
+        ? d.keepaVerdictPass
+        : verdict === "kill"
+          ? d.keepaVerdictKill
+          : d.keepaVerdictUnknown;
+    return (
+      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
+        {label}
+      </span>
+    );
+  };
+
+  const applyRemove = () => {
+    const killAsins = killed.map((r) => r.asin);
+    onRemoveAsins(killAsins);
+    setResults([]);
+    setConfirming(false);
+    setAppliedMsg(d.keepaApplied.replace("{n}", String(killAsins.length)));
+  };
+
+  return (
+    <div className="mb-4 rounded-xl border border-ink/10 bg-ink/[0.03] p-4">
+      <p className="text-sm font-semibold text-ink">{d.keepaAutoTitle}</p>
+      <p className="mt-1 text-xs leading-5 text-ink/60">{d.keepaAutoHint}</p>
+      {hasKey === false && (
+        <p className="mt-2 text-xs leading-5 text-amber-700">
+          ⚠ {d.keepaNoKey}：{d.keepaNoKeyHint}
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={run}
+          disabled={hasKey !== true || running || asins.length === 0}
+          className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+        >
+          {running ? d.keepaAutoRunning : d.keepaAutoButton}
+        </button>
+        <span className="text-xs text-ink/50">
+          {asins.length} ASINs
+        </span>
+      </div>
+      {asins.length === 0 && (
+        <p className="mt-1 text-xs text-ink/50">{d.keepaNoAsin}</p>
+      )}
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {appliedMsg && (
+        <p className="mt-2 text-xs text-emerald-700">{appliedMsg}</p>
+      )}
+      {results.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {results.map((r) => (
+            <div
+              key={r.asin}
+              className="rounded-lg border border-ink/10 bg-white p-3"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-xs font-medium text-ink">
+                  {r.asin}
+                </span>
+                {verdictBadge(r.verdict)}
+              </div>
+              <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-xs leading-5 text-ink/70">
+                {r.reasons.map((reason, i) => (
+                  <li key={i}>{formatReason(reason, r.metrics)}</li>
+                ))}
+              </ul>
+              <div className="mt-2 grid grid-cols-2 gap-1 text-xs text-ink/60 sm:grid-cols-4">
+                <span>
+                  {d.keepaMetricDrop}：{fmtDrop(r.metrics.priceDrop30dPct)}
+                </span>
+                <span>
+                  {d.keepaMetricRank}：{fmtRank(r.metrics.rankMaxMinRatio90d)}
+                </span>
+                <span>
+                  {d.keepaMetricReviews}：{fmtReviews(r.metrics.reviewGrowth90d)}
+                </span>
+                <span>
+                  {d.keepaMetricStockout}：{fmtStockout(r.metrics.stockoutDays90d)}
+                </span>
+              </div>
+            </div>
+          ))}
+          {killed.length > 0 && !confirming && (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-600 transition hover:bg-red-50"
+            >
+              {d.keepaApplyButton} ({killed.length})
+            </button>
+          )}
+          {confirming && (
+            <div className="rounded-lg border border-red-200 bg-red-50/60 p-3">
+              <p className="text-xs text-red-800">
+                {d.keepaApplyConfirm.replace("{n}", String(killed.length))}
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={applyRemove}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90"
+                >
+                  {d.keepaConfirmYes}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirming(false)}
+                  className="rounded-lg border border-ink/15 px-3 py-1.5 text-sm text-ink/80 transition hover:bg-ink/5"
+                >
+                  {d.keepaConfirmNo}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function StepCard({
@@ -161,7 +396,13 @@ function StepCard({
   );
 }
 
-export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDict }) {
+export function AmazonManualGuideClient({
+  dict: d,
+  lang = "zh",
+}: {
+  dict: AmazonManualGuideDict;
+  lang?: string;
+}) {
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [cats, setCats] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
@@ -461,7 +702,19 @@ export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDi
           )}
 
           {step.id === "keepa" && (
-            <div className="grid gap-3 md:grid-cols-2">
+            <>
+              <KeepaAutoScreen
+                d={d}
+                lang={lang}
+                candidates={candidates}
+                country={country}
+                onRemoveAsins={(asins) =>
+                  setCandidates((prev) =>
+                    prev.filter((r) => !asins.includes(r.asin.trim().toUpperCase()))
+                  )
+                }
+              />
+              <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
                 <p className="text-sm font-semibold text-emerald-900">{d.keepaPassTitle}</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-emerald-900/90">
@@ -478,7 +731,8 @@ export function AmazonManualGuideClient({ dict: d }: { dict: AmazonManualGuideDi
                   ))}
                 </ul>
               </div>
-            </div>
+              </div>
+            </>
           )}
 
           {step.id === "reviews" && (
