@@ -244,6 +244,7 @@ export function DemandCheckClient({
   const [kwInput, setKwInput] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
+  const [copiedAll, setCopiedAll] = useState(false);
 
   // AI 推荐关键词
   const [aiProductInput, setAiProductInput] = useState(
@@ -565,6 +566,19 @@ export function DemandCheckClient({
     });
     setBulkText("");
     setBulkOpen(false);
+  };
+
+  /* 一键复制全部关键词：一行一个，与选词启动包同口径 */
+  const copyAllKeywords = async () => {
+    const words = rows.map((r) => r.keyword.trim()).filter(Boolean);
+    if (words.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(words.join("\n"));
+      setCopiedAll(true);
+      setTimeout(() => setCopiedAll(false), 2000);
+    } catch {
+      /* 剪贴板不可用时忽略 */
+    }
   };
 
   const summary = useMemo(() => {
@@ -897,6 +911,16 @@ export function DemandCheckClient({
         >
           {d.importKeywords}
         </button>
+        {rows.length > 0 && (
+          <button
+            type="button"
+            onClick={copyAllKeywords}
+            className="rounded-lg border border-ink/15 px-3 py-1.5 text-sm text-ink/70 hover:bg-ink/5"
+          >
+            📋 {d.copyAll} ({rows.length})
+          </button>
+        )}
+        {copiedAll && <span className="text-sm text-emerald-600">✓ {d.copied}</span>}
       </div>
 
       {bulkOpen && (
