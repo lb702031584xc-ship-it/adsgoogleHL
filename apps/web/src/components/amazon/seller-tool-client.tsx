@@ -38,8 +38,8 @@ interface Product {
   ipCopyright: IpState;
   ipPatent: IpState;
   notes: string;
-  /** 来源：manual 手动 / csv CSV导入 / catalog 商品库导入 / sample 示例。 */
-  source?: "manual" | "csv" | "catalog" | "sample";
+  /** 来源：manual 手动 / csv CSV导入 / catalog 商品库导入 / keepa Keepa粘贴导入 / sample 示例。 */
+  source?: "manual" | "csv" | "catalog" | "keepa" | "sample";
   sourceNetwork?: string | null;
   /** 渠道链接：商品库 promoUrl（目录里的真实链接，原样展示，不改写）。 */
   sourceUrl?: string | null;
@@ -48,6 +48,12 @@ interface Product {
   affiliateCommission?: number | null;
   /** true → 采购成本/FBA/头程尚未补录，利润不算、只标待补录。 */
   costUnknown?: boolean;
+  /** Keepa 粘贴数据：有才有，无则 null，绝不从排名推算销量。 */
+  keepaRank?: number | null;
+  keepaSellerCount?: number | null;
+  keepaAvg90?: number | null;
+  keepaLow?: number | null;
+  keepaHigh?: number | null;
 }
 
 interface Settings {
@@ -111,8 +117,8 @@ function screenProduct(p: Product, s: Settings): string {
   if (profit <= 0) return "拦截：净利润<=0";
   const reasons: string[] = [];
   if (margin < s.minMargin) reasons.push(`利润率${Math.round(margin * 100)}%<${Math.round(s.minMargin * 100)}%`);
-  if (p.source === "catalog" && p.monthlySales === 0) {
-    reasons.push("月销量未知（联盟目录无此字段）");
+  if ((p.source === "catalog" || p.source === "keepa") && p.monthlySales === 0) {
+    reasons.push("月销量未知（来源无直接销量字段）");
   } else if (p.monthlySales < s.minMonthlySales) {
     reasons.push(`月销量<${s.minMonthlySales}`);
   }
@@ -195,6 +201,259 @@ function catalogToProduct(item: CatalogProduct): Product {
   };
 }
 
+/**
+ * Keepa 粘贴导入：只解析用户粘贴的文字，不联网、不抓取。
+ * 支持三种粘贴：① 键值行（ASIN：xxx / 现价：xx / 销售排名：xx …，中英文键名都认）；
+ * ② CSV（含 ASIN/商品名/销售排名等表头的单行或多行）；③ 单条商品链接（Amazon/Keepa 链接只提 ASIN，其余字段仍需粘贴）。
+ * 多个商品用空行隔开。销售排名只作参考展示，绝不由排名推算月销量。
+ */
+interface KeepaDraft {
+  name: string;
+  asin: string;
+  price: number | null;
+  avg90: number | null;
+  low: number | null;
+  high: number | null;
+  rank: number | null;
+  sellerCount: number | null;
+  rating: number | null;
+  reviews: number | null;
+  sourceUrl: string | null;
+  /** true → 售价取自 90 天均价（无现价时），备注里会写明，不是现价。 */
+  priceFromAvg: boolean;
+  /** Keepa 产品页原文里的补充字段（有才有，无则 null）。 */
+  brand: string;
+  category: string;
+  fbaFee: number | null;
+  rank90: number | null;
+  rankNote: string | null;
+  listedSince: string | null;
+}
+
+const KEEPA_SAMPLE = `ASIN：B0XXXXXXX1
+商品名：示例-收纳篮
+现价：35.99
+90天均价：32.50
+历史最低：28.99
+历史最高：45.99
+销售排名：12345
+卖家数：8
+评分：4.5
+评论数：54
+链接：https://www.amazon.com/dp/B0XXXXXXX1`;
+
+function keepaNum(v: string | undefined): number | null {
+  if (v == null) return null;
+  const cleaned = v.replace(/[$¥￥,\s#]/g, "").replace(/in\s+.*$/i, "");
+  const n = parseFloat(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function keepaInt(v: string | undefined): number | null {
+  const n = keepaNum(v);
+  return n == null ? null : Math.round(n);
+}
+
+function extractAsin(text: string): string {
+  const dp = text.match(/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/i);
+  if (dp) return dp[1].toUpperCase();
+  const keepa = text.match(/product\/\d+-([A-Z0-9]{10})/i);
+  if (keepa) return keepa[1].toUpperCase();
+  const bare = text.match(/\b([A-Z0-9]{10})\b/);
+  return bare ? bare[1].toUpperCase() : "";
+}
+
+function extractUrl(text: string): string | null {
+  const m = text.match(/https?:\/\/[^\s,;]+/);
+  return m ? m[0] : null;
+}
+
+const KEEPA_KEYS: Array<[string[], keyof KeepaDraft]> = [
+  [["asin"], "asin"],
+  [["商品名", "标题", "title", "name", "产品名"], "name"],
+  [["现价", "售价", "价格", "price", "current price", "amazon price", "buy box price"], "price"],
+  [["90天均价", "90日均价", "avg90", "90-day avg", "90 day avg"], "avg90"],
+  [["历史最低", "最低价", "low", "lowest"], "low"],
+  [["历史最高", "最高价", "high", "highest"], "high"],
+  [["销售排名", "排名", "bsr", "sales rank", "rank"], "rank"],
+  [["卖家数", "卖家数量", "seller count", "sellers", "offer count", "offers"], "sellerCount"],
+  [["评分", "rating"], "rating"],
+  [["评论数", "评论", "review count", "reviews"], "reviews"],
+  [["链接", "网址", "url", "link"], "sourceUrl"],
+];
+
+function parseKeepaBlock(block: string): KeepaDraft | null {
+  const draft: KeepaDraft = {
+    name: "", asin: "", price: null, avg90: null, low: null, high: null,
+    rank: null, sellerCount: null, rating: null, reviews: null,
+    sourceUrl: null, priceFromAvg: false,
+    brand: "", category: "", fbaFee: null, rank90: null, rankNote: null, listedSince: null,
+  };
+  const fill = <T,>(current: T | null, value: T | null): T | null =>
+    current == null ? value : current;
+  for (const rawLine of block.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const url = extractUrl(line);
+    if (url && !draft.sourceUrl) draft.sourceUrl = url;
+    if (!draft.asin) draft.asin = extractAsin(line);
+    // Keepa 产品页原文格式：很多行没有冒号（如 “Title …”“ASIN …”“畅销排名 - 目前 #43”
+    // “Amazon - 90 days avg. $15.99”），只在对应字段为空时补填，键值行的显式值优先。
+    const titleM = line.match(/^Title\s+(.+)$/i);
+    if (titleM && !draft.name) draft.name = titleM[1].trim();
+    const brandM = line.match(/^Brand\s+(.+)$/i) ?? line.match(/^品牌\s+(.+)$/);
+    if (brandM && !draft.brand) draft.brand = brandM[1].trim();
+    const groupM = line.match(/^Product Group\s+(.+)$/i);
+    if (groupM && !draft.category) draft.category = groupM[1].trim();
+    const rootM = line.match(/分类\s*-\s*Root\s+(.+)$/);
+    if (rootM && !draft.category) draft.category = rootM[1].trim();
+    const ratingM = line.match(/评分\s*([0-9]+(?:\.[0-9]+)?)/);
+    if (ratingM) draft.rating = fill(draft.rating, keepaNum(ratingM[1]));
+    const reviewCountM = line.match(/评论数量\s*([\d,]+)/);
+    if (reviewCountM) draft.reviews = fill(draft.reviews, keepaInt(reviewCountM[1]));
+    const fbaM = line.match(/FBA Pick&Pack Fee[^\d]*\$?\s*([\d.]+)/i)
+      ?? line.match(/FBA配送费[^\d]*\$?\s*([\d.]+)/);
+    if (fbaM) draft.fbaFee = fill(draft.fbaFee, keepaNum(fbaM[1]));
+    const listedM = line.match(/Listed since\s*(.+)$/i) ?? line.match(/上架时间\s*(.+)$/);
+    if (listedM && !draft.listedSince) draft.listedSince = listedM[1].trim();
+    const rankNowM = line.match(/(?:畅销排名|销售排名|Sales Rank)[^\d#]*?目前[^\d#]*#?\s*([\d,]+)/);
+    if (rankNowM) draft.rank = fill(draft.rank, keepaInt(rankNowM[1]));
+    const rank90M = line.match(/(?:畅销排名|销售排名)[^\d#]*?90\s*days\s*avg\.?[^\d#]*#?\s*([\d,]+)/);
+    if (rank90M) draft.rank90 = fill(draft.rank90, keepaInt(rank90M[1]));
+    const amazon90M = line.match(/(?:Amazon|亚马逊)[^\d$]*?90\s*days\s*avg\.?[^\d$]*\$?\s*([\d.]+)/i);
+    if (amazon90M) draft.avg90 = fill(draft.avg90, keepaNum(amazon90M[1]));
+    const new90M = line.match(/新品价格[^\d$]*?90\s*days\s*avg\.?[^\d$]*\$?\s*([\d.]+)/);
+    if (new90M) draft.avg90 = fill(draft.avg90, keepaNum(new90M[1]));
+    const newNowM = line.match(/新品价格[^\d$]*?目前[^\d$]*\$?\s*([\d.]+)/);
+    if (newNowM) draft.price = fill(draft.price, keepaNum(newNowM[1]));
+    const amazonNowM = line.match(/Amazon[^\d$]*?目前[^\d$]*\$?\s*([\d.]+)/i);
+    if (amazonNowM) draft.price = fill(draft.price, keepaNum(amazonNowM[1]));
+    const sep = line.match(/^([^:：=]+)[:：=]\s*(.+)$/);
+    if (!sep) continue;
+    const key = sep[1].trim().toLowerCase();
+    const value = sep[2].trim();
+    for (const [aliases, field] of KEEPA_KEYS) {
+      if (!aliases.includes(key)) continue;
+      if (field === "asin") draft.asin = value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+      else if (field === "name") draft.name = value;
+      else if (field === "sourceUrl") draft.sourceUrl = extractUrl(value) ?? value;
+      else if (field === "price") draft.price = keepaNum(value);
+      else if (field === "avg90") draft.avg90 = keepaNum(value);
+      else if (field === "low") draft.low = keepaNum(value);
+      else if (field === "high") draft.high = keepaNum(value);
+      else if (field === "rank") draft.rank = keepaInt(value);
+      else if (field === "sellerCount") draft.sellerCount = keepaInt(value);
+      else if (field === "rating") draft.rating = keepaNum(value);
+      else if (field === "reviews") draft.reviews = keepaInt(value);
+    }
+  }
+  if (!draft.asin && !draft.name) return null;
+  if (draft.rank == null && draft.rank90 != null) {
+    draft.rank = draft.rank90;
+    draft.rankNote = "90天均值";
+  } else if (draft.rank != null) {
+    draft.rankNote = "目前";
+  }
+  if (draft.price == null && draft.avg90 != null) {
+    draft.price = draft.avg90;
+    draft.priceFromAvg = true;
+  }
+  return draft;
+}
+
+function parseKeepaCsv(text: string): KeepaDraft[] | null {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  if (lines.length < 2) return null;
+  // 必须是真正的多列表头（逗号分隔、其中一列就是 ASIN），否则键值行
+  // 如 “ASIN：B0XXXXXXX1” 会被误认成 CSV（它也含 asin 子串）。
+  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  if (headers.length < 2) return null;
+  if (!headers.some((h) => h === "asin" || h === "asin码")) return null;
+  const pick = (row: string[], names: string[]): string => {
+    const idx = headers.findIndex((h) => names.some((n) => h.includes(n)));
+    return idx >= 0 ? (row[idx] ?? "").trim() : "";
+  };
+  const drafts: KeepaDraft[] = [];
+  for (const line of lines.slice(1)) {
+    const row = line.split(",");
+    const draft: KeepaDraft = {
+      name: pick(row, ["商品名", "标题", "title", "name"]),
+      asin: pick(row, ["asin"]).replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
+      price: keepaNum(pick(row, ["现价", "售价", "价格", "price"])),
+      avg90: keepaNum(pick(row, ["90天均价", "avg90"])),
+      low: keepaNum(pick(row, ["历史最低", "最低价"])),
+      high: keepaNum(pick(row, ["历史最高", "最高价"])),
+      rank: keepaInt(pick(row, ["销售排名", "排名", "bsr", "rank"])),
+      sellerCount: keepaInt(pick(row, ["卖家数", "seller"])),
+      rating: keepaNum(pick(row, ["评分", "rating"])),
+      reviews: keepaInt(pick(row, ["评论数", "review"])),
+      sourceUrl: extractUrl(line),
+      priceFromAvg: false,
+      brand: "", category: "", fbaFee: null, rank90: null, rankNote: null, listedSince: null,
+    };
+    if (draft.price == null && draft.avg90 != null) {
+      draft.price = draft.avg90;
+      draft.priceFromAvg = true;
+    }
+    if (draft.asin || draft.name) drafts.push(draft);
+  }
+  return drafts;
+}
+
+export function parseKeepaPaste(text: string): { drafts: KeepaDraft[]; skipped: number } {
+  const csv = parseKeepaCsv(text);
+  if (csv) return { drafts: csv, skipped: 0 };
+  const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  const drafts: KeepaDraft[] = [];
+  let skipped = 0;
+  for (const block of blocks) {
+    const draft = parseKeepaBlock(block);
+    if (draft) drafts.push(draft);
+    else skipped += 1;
+  }
+  return { drafts, skipped };
+}
+
+export function keepaDraftToProduct(draft: KeepaDraft): Product {
+  const noteParts: string[] = ["来源：Keepa粘贴导入"];
+  if (draft.brand) noteParts.push(`品牌：${draft.brand}`);
+  if (draft.avg90 != null) noteParts.push(`Keepa 90天均价：$${draft.avg90}`);
+  if (draft.low != null) noteParts.push(`历史最低：$${draft.low}`);
+  if (draft.high != null) noteParts.push(`历史最高：$${draft.high}`);
+  if (draft.sellerCount != null) noteParts.push(`卖家数：${draft.sellerCount}`);
+  if (draft.rank != null) noteParts.push(`销售排名：#${draft.rank}${draft.rankNote ? `（${draft.rankNote}）` : ""}`);
+  if (draft.fbaFee != null) noteParts.push(`FBA配送费：$${draft.fbaFee}（已知，采购成本/头程仍待补录）`);
+  if (draft.listedSince) noteParts.push(`上架时间：${draft.listedSince}`);
+  if (draft.priceFromAvg) noteParts.push("售价取自90天均价（无现价，非现价）");
+  noteParts.push("月销量未知：排名仅作参考，不由排名推算销量");
+  return {
+    id: `keepa-${draft.asin || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: draft.name || `Keepa导入-${draft.asin}`,
+    asin: draft.asin,
+    category: draft.category,
+    price: draft.price ?? 0,
+    cost: 0,
+    fbaFee: draft.fbaFee ?? 0,
+    shipping: 0,
+    monthlySales: 0,
+    reviews: draft.reviews ?? 0,
+    rating: draft.rating ?? 0,
+    ipTrademark: "未查", ipCopyright: "未查", ipPatent: "未查",
+    notes: noteParts.join("；"),
+    source: "keepa",
+    sourceNetwork: "Keepa",
+    sourceUrl: draft.sourceUrl,
+    sourceExternalId: draft.asin || null,
+    affiliateCommission: null,
+    costUnknown: true,
+    keepaRank: draft.rank,
+    keepaSellerCount: draft.sellerCount,
+    keepaAvg90: draft.avg90,
+    keepaLow: draft.low,
+    keepaHigh: draft.high,
+  };
+}
+
 const EMPTY_FORM = {
   name: "", asin: "", category: "", price: "", cost: "", fbaFee: "",
   shipping: "", monthlySales: "", reviews: "", rating: "", notes: "",
@@ -221,6 +480,12 @@ export function SellerToolClient() {
   const [catalogSelected, setCatalogSelected] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState("");
+
+  // Keepa 粘贴导入
+  const [showKeepa, setShowKeepa] = useState(false);
+  const [keepaText, setKeepaText] = useState("");
+  const [keepaDrafts, setKeepaDrafts] = useState<KeepaDraft[]>([]);
+  const [keepaSkipped, setKeepaSkipped] = useState(0);
 
   // 补录成本（导入商品的成本/FBA/头程/月销量人工补录）
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -365,9 +630,9 @@ export function SellerToolClient() {
   const startEdit = (p: Product) => {
     setEditingId(p.id);
     setEditFields({
-      cost: p.costUnknown ? "" : String(p.cost),
-      fbaFee: p.costUnknown ? "" : String(p.fbaFee),
-      shipping: p.costUnknown ? "" : String(p.shipping),
+      cost: p.cost > 0 ? String(p.cost) : "",
+      fbaFee: p.fbaFee > 0 ? String(p.fbaFee) : "",
+      shipping: p.shipping > 0 ? String(p.shipping) : "",
       monthlySales: p.monthlySales > 0 ? String(p.monthlySales) : "",
     });
   };
@@ -400,9 +665,35 @@ export function SellerToolClient() {
 
   const sourceLabel = (p: Product): string => {
     if (p.source === "catalog") return p.sourceNetwork ?? "商品库";
+    if (p.source === "keepa") return "Keepa";
     if (p.source === "csv") return "CSV导入";
     if (p.source === "sample") return "示例";
     return "手动";
+  };
+
+  const previewKeepa = () => {
+    const { drafts, skipped } = parseKeepaPaste(keepaText);
+    setKeepaDrafts(drafts);
+    setKeepaSkipped(skipped);
+  };
+
+  const importKeepaDrafts = () => {
+    if (keepaDrafts.length === 0) return;
+    const existingAsins = new Set(products.filter((p) => p.asin).map((p) => p.asin.toUpperCase()));
+    const fresh: Product[] = [];
+    let skipped = 0;
+    for (const draft of keepaDrafts) {
+      if (draft.asin && existingAsins.has(draft.asin.toUpperCase())) {
+        skipped += 1;
+        continue;
+      }
+      if (draft.asin) existingAsins.add(draft.asin.toUpperCase());
+      fresh.push(keepaDraftToProduct(draft));
+    }
+    if (fresh.length > 0) setProducts((prev) => [...fresh, ...prev]);
+    alert(`导入 ${fresh.length} 条${skipped > 0 ? `，跳过已在库 ASIN ${skipped} 条` : ""}。导入商品标“待补录”，补录成本后才算利润；排名仅作参考，不推算销量。`);
+    setKeepaDrafts([]);
+    setKeepaText("");
   };
 
   return (
@@ -412,7 +703,7 @@ export function SellerToolClient() {
         <p className="mt-1 text-sm text-ink/60">
           潜力库数据只存在你的浏览器本地（localStorage）。唯一调服务器接口的是“从商品库导入”，
           它只读商品库里已同步的联盟商品（PB/YP 经 catalog-sync 同步的数据），不触发新的同步、
-          不爬取亚马逊。筛选阈值全部可在下方改，默认值来自课程说法，不是平台规则，
+          不爬取亚马逊。Keepa 粘贴导入只解析你粘贴的文字，同样不联网、不抓取。筛选阈值全部可在下方改，默认值来自课程说法，不是平台规则，
           执行前以当前 Seller Central 为准。IP 任一项“有风险”只打标签，必须人工终审，系统不会自动放行。
         </p>
       </div>
@@ -423,6 +714,10 @@ export function SellerToolClient() {
         <button type="button" onClick={openCatalogPanel}
           className="rounded-lg bg-ink px-3 py-1.5 text-sm text-white">
           {showCatalog ? "收起商品库导入" : "从商品库导入"}
+        </button>
+        <button type="button" onClick={() => setShowKeepa((v) => !v)}
+          className="rounded-lg bg-ink px-3 py-1.5 text-sm text-white">
+          {showKeepa ? "收起 Keepa 粘贴导入" : "Keepa 粘贴导入"}
         </button>
         <label className="cursor-pointer rounded-lg border border-ink/20 px-3 py-1.5 text-sm">
           导入 CSV
@@ -510,6 +805,66 @@ export function SellerToolClient() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showKeepa && (
+        <div className="rounded-lg border border-ink/10 p-4">
+          <h2 className="font-semibold">Keepa 数据粘贴导入（只解析你粘贴的文字，不联网、不抓取）</h2>
+          <p className="mt-1 text-xs text-ink/55">
+            在商品页看着 Keepa 图，把关键数按下面格式粘贴进来，点“解析预览”核对无误再确认导入。
+            也可以直接把 Keepa 产品页的 Details 和统计表文字整段粘贴进来（Title、ASIN、畅销排名 - 目前、
+            Amazon - 90 days avg.、FBA Pick&Pack Fee 这些行都认），不用 API、不用 Keepa 账号密码。
+            多个商品用空行隔开；也可以直接粘贴带 ASIN 表头的 CSV 行，或单条商品链接（链接只提 ASIN，其余字段仍需粘贴）。
+            免费版 Keepa 只有价格线，销售排名、卖家数是付费版才有的线，没有就空着，不要填估计值。
+            销售排名只作参考展示，绝不由排名推算月销量；导入商品同样标“待补录”，补录成本后才算利润。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => setKeepaText(KEEPA_SAMPLE)}
+              className="rounded-lg border border-ink/20 px-3 py-1.5 text-sm">填入示例格式</button>
+            <button type="button" onClick={previewKeepa}
+              className="rounded-lg bg-ink px-3 py-1.5 text-sm text-white">解析预览</button>
+            <button type="button" onClick={() => { setKeepaText(""); setKeepaDrafts([]); }}
+              className="rounded-lg border border-ink/20 px-3 py-1.5 text-sm">清空</button>
+          </div>
+          <textarea value={keepaText} onChange={(e) => setKeepaText(e.target.value)} rows={10}
+            placeholder={"ASIN：B0XXXXXXXXXX\n商品名：\n现价：\n90天均价：\n销售排名：\n卖家数：\n评分：\n评论数："}
+            className="mt-3 w-full rounded border border-ink/20 px-2 py-1.5 font-mono text-sm" />
+          {keepaSkipped > 0 && (
+            <p className="mt-2 text-xs text-amber-700">跳过 {keepaSkipped} 个既无 ASIN 又无商品名的空块。</p>
+          )}
+          {keepaDrafts.length > 0 && (
+            <div className="mt-3 overflow-x-auto">
+              <p className="mb-2 text-xs text-ink/55">预览 {keepaDrafts.length} 条，核对无误再点确认导入；售价后带 * 表示取自 90 天均价（无现价时）。</p>
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="bg-ink/5 text-left">
+                    {["商品名", "ASIN", "售价$", "90天均价$", "销售排名", "卖家数", "评分", "评论数"].map((h) => (
+                      <th key={h} className="px-2 py-1 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {keepaDrafts.map((d, i) => (
+                    <tr key={`${d.asin}-${i}`} className="border-t border-ink/10">
+                      <td className="px-2 py-1">{d.name || "—"}</td>
+                      <td className="px-2 py-1">{d.asin || "—"}</td>
+                      <td className="px-2 py-1">{d.price == null ? "—" : `${d.price}${d.priceFromAvg ? " *" : ""}`}</td>
+                      <td className="px-2 py-1">{d.avg90 ?? "—"}</td>
+                      <td className="px-2 py-1">{d.rank ?? "—"}</td>
+                      <td className="px-2 py-1">{d.sellerCount ?? "—"}</td>
+                      <td className="px-2 py-1">{d.rating ?? "—"}</td>
+                      <td className="px-2 py-1">{d.reviews ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button type="button" onClick={importKeepaDrafts}
+                className="mt-3 rounded-lg bg-ink px-4 py-1.5 text-sm text-white">
+                确认导入（{keepaDrafts.length}）
+              </button>
             </div>
           )}
         </div>
@@ -622,14 +977,14 @@ export function SellerToolClient() {
         <table className="w-full min-w-[980px] text-sm">
           <thead>
             <tr className="bg-ink/5 text-left">
-              {["产品名", "ASIN", "类目", "售价$", "月销量", "评论数", "评分", "单件利润$", "利润率", "筛选结果", "来源", "IP状态", ""].map((h) => (
+              {["产品名", "ASIN", "类目", "售价$", "月销量", "评论数", "销售排名", "评分", "单件利润$", "利润率", "筛选结果", "来源", "IP状态", ""].map((h) => (
                 <th key={h} className="px-3 py-2 font-medium">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={13} className="px-3 py-6 text-center text-ink/55">
+              <tr><td colSpan={14} className="px-3 py-6 text-center text-ink/55">
                 潜力库是空的：点“载入示例”看 3 条演示数据，或上面新增、导入 CSV、从商品库导入。
               </td></tr>
             )}
@@ -639,16 +994,17 @@ export function SellerToolClient() {
                 <td className="px-3 py-2">{p.asin || "—"}</td>
                 <td className="px-3 py-2">{p.category || "—"}</td>
                 <td className="px-3 py-2">{p.price}</td>
-                <td className="px-3 py-2">{p.source === "catalog" && p.monthlySales === 0 ? "未知" : p.monthlySales}</td>
+                <td className="px-3 py-2">{(p.source === "catalog" || p.source === "keepa") && p.monthlySales === 0 ? "未知" : p.monthlySales}</td>
                 <td className="px-3 py-2">{p.reviews}</td>
+                <td className="px-3 py-2">{p.keepaRank ?? "—"}</td>
                 <td className="px-3 py-2">{p.rating || "—"}</td>
                 <td className="px-3 py-2">{profit == null ? "—" : profit}</td>
                 <td className="px-3 py-2">{margin == null ? "—" : `${Math.round(margin * 100)}%`}</td>
                 <td className="px-3 py-2">{result}</td>
                 <td className="px-3 py-2">
                   {sourceLabel(p)}
-                  {p.source === "catalog" && p.sourceUrl && (
-                    <span> · <a href={p.sourceUrl} target="_blank" rel="noreferrer" className="text-blue-700 underline">渠道链接</a></span>
+                  {p.sourceUrl && (
+                    <span> · <a href={p.sourceUrl} target="_blank" rel="noreferrer" className="text-blue-700 underline">{p.source === "keepa" ? "Keepa链接" : "渠道链接"}</a></span>
                   )}
                 </td>
                 <td className="px-3 py-2">{ip}</td>
