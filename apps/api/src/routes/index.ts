@@ -232,6 +232,9 @@ export async function registerRoutes(
     await registerApiKeyRoutes(app, { prisma: services.prisma });
     await registerIpBanRoutes(app, { prisma: services.prisma });
     await registerAiRoutes(app, { prisma: services.prisma });
+    // 卖家工具 AI 推荐（SERP 证据 + 模型综合，线索层；挂 /api/v1/ai/ 下复用 AI 限流）
+    const { registerSellerRecoRoutes } = await import("./seller-reco.js");
+    await registerSellerRecoRoutes(app, { prisma: services.prisma });
     // 每租户系统设置（AI 引擎/广告发布/代理/系统偏好；租户级覆盖，不动全局配置）
     const { registerSettingsRoutes } = await import("./settings.js");
     await registerSettingsRoutes(app, { prisma: services.prisma });

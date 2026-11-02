@@ -7,6 +7,11 @@ import {
   type CatalogNetwork,
   type CatalogProduct,
 } from "@/lib/api/catalog-actions";
+import {
+  requestSellerRecommendationsAction,
+  type RecoCandidate,
+  type RecoResult,
+} from "@/lib/api/seller-reco-actions";
 
 /**
  * 卖家工具 P0 网页版：与桌面版 app.py 同一套筛选与利润逻辑。
@@ -18,6 +23,9 @@ import {
  * - 目录里没有采购成本、FBA、头程、月销量：导入后标“待补录”，绝不编造，
  *   补录后才算利润；联盟佣金只作参考展示，绝不计入卖家利润。
  * - IP 标签：商标 / 版权 / 专利三道检查只打标签，最终签字在人。
+ * - AI 推荐：DataForSEO 公开搜索证据 + 大模型综合，只给“线索”；导入后
+ *   同样标“待补录”，必须用 Keepa 粘贴核实价格/排名/评论、补录成本后才算
+ *   利润。没有搜索证据时不推荐，绝不用模型知识编造销量/排名/评论数。
  */
 
 type IpState = "未查" | "无风险" | "有风险";
@@ -38,8 +46,8 @@ interface Product {
   ipCopyright: IpState;
   ipPatent: IpState;
   notes: string;
-  /** 来源：manual 手动 / csv CSV导入 / catalog 商品库导入 / keepa Keepa粘贴导入 / sample 示例。 */
-  source?: "manual" | "csv" | "catalog" | "keepa" | "sample";
+  /** 来源：manual 手动 / csv CSV导入 / catalog 商品库导入 / keepa Keepa粘贴导入 / ai-reco AI推荐线索 / sample 示例。 */
+  source?: "manual" | "csv" | "catalog" | "keepa" | "ai-reco" | "sample";
   sourceNetwork?: string | null;
   /** 渠道链接：商品库 promoUrl（目录里的真实链接，原样展示，不改写）。 */
   sourceUrl?: string | null;
@@ -117,7 +125,7 @@ function screenProduct(p: Product, s: Settings): string {
   if (profit <= 0) return "拦截：净利润<=0";
   const reasons: string[] = [];
   if (margin < s.minMargin) reasons.push(`利润率${Math.round(margin * 100)}%<${Math.round(s.minMargin * 100)}%`);
-  if ((p.source === "catalog" || p.source === "keepa") && p.monthlySales === 0) {
+  if ((p.source === "catalog" || p.source === "keepa" || p.source === "ai-reco") && p.monthlySales === 0) {
     reasons.push("月销量未知（来源无直接销量字段）");
   } else if (p.monthlySales < s.minMonthlySales) {
     reasons.push(`月销量<${s.minMonthlySales}`);
@@ -487,6 +495,13 @@ export function SellerToolClient() {
   const [keepaDrafts, setKeepaDrafts] = useState<KeepaDraft[]>([]);
   const [keepaSkipped, setKeepaSkipped] = useState(0);
 
+  // AI 推荐（线索层：导入后仍是待核实，必须 Keepa 核实 + 补录成本后才算利润）
+  const [showReco, setShowReco] = useState(false);
+  const [recoDirection, setRecoDirection] = useState("");
+  const [recoLoading, setRecoLoading] = useState(false);
+  const [recoError, setRecoError] = useState("");
+  const [recoResult, setRecoResult] = useState<RecoResult | null>(null);
+
   // 补录成本（导入商品的成本/FBA/头程/月销量人工补录）
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFields, setEditFields] = useState({ cost: "", fbaFee: "", shipping: "", monthlySales: "" });
@@ -666,6 +681,7 @@ export function SellerToolClient() {
   const sourceLabel = (p: Product): string => {
     if (p.source === "catalog") return p.sourceNetwork ?? "商品库";
     if (p.source === "keepa") return "Keepa";
+    if (p.source === "ai-reco") return "AI推荐";
     if (p.source === "csv") return "CSV导入";
     if (p.source === "sample") return "示例";
     return "手动";
@@ -696,6 +712,68 @@ export function SellerToolClient() {
     setKeepaText("");
   };
 
+  const runReco = async () => {
+    const direction = recoDirection.trim();
+    if (direction.length < 2) {
+      setRecoError("方向至少 2 个字，例如“宠物用品”。");
+      return;
+    }
+    setRecoLoading(true);
+    setRecoError("");
+    const res = await requestSellerRecommendationsAction(direction, 5);
+    setRecoLoading(false);
+    if (!res.ok) {
+      setRecoError(res.error);
+      return;
+    }
+    setRecoResult(res.data);
+  };
+
+  const importRecoCandidate = (c: RecoCandidate) => {
+    const nameKey = c.name.trim().toLowerCase();
+    if (products.some((p) => p.name.trim().toLowerCase() === nameKey)) return;
+    const noteParts: string[] = [
+      "AI推荐线索（未核实）",
+      c.why,
+      `来源：${c.sources.join("、")}`,
+    ];
+    if (c.priceHint != null) {
+      noteParts.push(`榜单提及价 $${c.priceHint}（仅供参考，未核实）`);
+    } else {
+      noteParts.push("售价未标，需核实后填写");
+    }
+    noteParts.push("请用 Keepa 粘贴核实价格/排名/评论后再补录成本算利润");
+    const product: Product = {
+      id: `ai-reco-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: c.name,
+      asin: "",
+      category: c.category,
+      price: c.priceHint ?? 0,
+      cost: 0,
+      fbaFee: 0,
+      shipping: 0,
+      monthlySales: 0,
+      reviews: 0,
+      rating: 0,
+      ipTrademark: "未查",
+      ipCopyright: "未查",
+      ipPatent: "未查",
+      notes: noteParts.join("；"),
+      source: "ai-reco",
+      sourceNetwork: "AI推荐",
+      sourceUrl: c.sources[0] ?? null,
+      sourceExternalId: null,
+      affiliateCommission: null,
+      costUnknown: true,
+      keepaRank: null,
+      keepaSellerCount: null,
+      keepaAvg90: null,
+      keepaLow: null,
+      keepaHigh: null,
+    };
+    setProducts((prev) => [product, ...prev]);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -703,7 +781,8 @@ export function SellerToolClient() {
         <p className="mt-1 text-sm text-ink/60">
           潜力库数据只存在你的浏览器本地（localStorage）。唯一调服务器接口的是“从商品库导入”，
           它只读商品库里已同步的联盟商品（PB/YP 经 catalog-sync 同步的数据），不触发新的同步、
-          不爬取亚马逊。Keepa 粘贴导入只解析你粘贴的文字，同样不联网、不抓取。筛选阈值全部可在下方改，默认值来自课程说法，不是平台规则，
+          不爬取亚马逊。Keepa 粘贴导入只解析你粘贴的文字，同样不联网、不抓取。AI 推荐用公开搜索证据给线索，
+          导入后仍是待核实，必须 Keepa 核实后才算利润。筛选阈值全部可在下方改，默认值来自课程说法，不是平台规则，
           执行前以当前 Seller Central 为准。IP 任一项“有风险”只打标签，必须人工终审，系统不会自动放行。
         </p>
       </div>
@@ -718,6 +797,10 @@ export function SellerToolClient() {
         <button type="button" onClick={() => setShowKeepa((v) => !v)}
           className="rounded-lg bg-ink px-3 py-1.5 text-sm text-white">
           {showKeepa ? "收起 Keepa 粘贴导入" : "Keepa 粘贴导入"}
+        </button>
+        <button type="button" onClick={() => setShowReco((v) => !v)}
+          className="rounded-lg bg-ink px-3 py-1.5 text-sm text-white">
+          {showReco ? "收起 AI 推荐" : "AI 推荐"}
         </button>
         <label className="cursor-pointer rounded-lg border border-ink/20 px-3 py-1.5 text-sm">
           导入 CSV
@@ -870,6 +953,58 @@ export function SellerToolClient() {
         </div>
       )}
 
+      {showReco && (
+        <div className="rounded-lg border border-ink/10 p-4">
+          <h2 className="font-semibold">AI 推荐（公开搜索证据给线索，不是核实结论）</h2>
+          <p className="mt-1 text-xs text-ink/55">
+            输入一个方向（如“宠物用品”“户外收纳”），后端用 DataForSEO 查公开榜单和文章，
+            再由大模型综合成候选，每条都带来源链接。没有搜索证据时不推荐，绝不编造销量、
+            排名、评论数。导入后一律标“待补录”：请先用 Keepa 粘贴核实价格/排名/评论，再补录
+            成本算利润。每次推荐约查 3 次 SERP（估算 $0.006），另有大模型调用费用；限流 20 次/分钟。
+            需要先在管理控制台 → AI 设置里配好 DataForSEO 凭证（并在官网完成账号验证）与大模型密钥。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <input value={recoDirection} onChange={(e) => setRecoDirection(e.target.value)}
+              placeholder="方向，如：宠物用品"
+              className="rounded border border-ink/20 px-2 py-1.5 text-sm" />
+            <button type="button" onClick={runReco} disabled={recoLoading}
+              className="rounded-lg bg-ink px-3 py-1.5 text-sm text-white disabled:opacity-50">
+              {recoLoading ? "搜索中…" : "AI 搜索推荐"}
+            </button>
+          </div>
+          {recoError && <p className="mt-2 text-sm text-red-700">{recoError}</p>}
+          {recoResult && (
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-ink/55">
+                查 {recoResult.queries.join("；")}，共 {recoResult.serpCalls} 次 SERP（估算 ${recoResult.serpCostEstimateUsd.toFixed(3)}），
+                候选 {recoResult.candidates.length} 条。
+                {recoResult.warnings.map((w) => <span key={w} className="block text-amber-700">{w}</span>)}
+              </p>
+              {recoResult.candidates.map((c) => {
+                const imported = products.some((p) => p.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+                return (
+                  <div key={c.name} className="rounded border border-ink/10 p-3">
+                    <p className="font-medium">{c.name}{c.category ? ` · ${c.category}` : ""}</p>
+                    <p className="mt-1 text-sm">{c.why}</p>
+                    <p className="mt-1 text-xs text-ink/55">
+                      {c.priceHint != null ? `榜单提及价 $${c.priceHint}（仅供参考，未核实）` : "售价未标，需核实后填写"} · 来源：
+                      {c.sources.map((u, i) => (<span key={u}>{i > 0 ? "、" : ""}<a href={u} target="_blank" rel="noreferrer" className="text-blue-700 underline">来源{i + 1}</a></span>))}
+                    </p>
+                    <button type="button" onClick={() => importRecoCandidate(c)} disabled={imported}
+                      className="mt-2 rounded-lg border border-ink/20 px-3 py-1 text-sm disabled:opacity-50">
+                      {imported ? "已导入" : "导入为待核实"}
+                    </button>
+                  </div>
+                );
+              })}
+              {recoResult.candidates.length === 0 && (
+                <p className="text-sm">没有带来源的候选，换个方向词再试。</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {showSettings && (
         <div className="rounded-lg border border-ink/10 p-4">
           <h2 className="font-semibold">筛选参数（改完自动保存到浏览器本地）</h2>
@@ -994,7 +1129,7 @@ export function SellerToolClient() {
                 <td className="px-3 py-2">{p.asin || "—"}</td>
                 <td className="px-3 py-2">{p.category || "—"}</td>
                 <td className="px-3 py-2">{p.price}</td>
-                <td className="px-3 py-2">{(p.source === "catalog" || p.source === "keepa") && p.monthlySales === 0 ? "未知" : p.monthlySales}</td>
+                <td className="px-3 py-2">{(p.source === "catalog" || p.source === "keepa" || p.source === "ai-reco") && p.monthlySales === 0 ? "未知" : p.monthlySales}</td>
                 <td className="px-3 py-2">{p.reviews}</td>
                 <td className="px-3 py-2">{p.keepaRank ?? "—"}</td>
                 <td className="px-3 py-2">{p.rating || "—"}</td>
@@ -1004,7 +1139,7 @@ export function SellerToolClient() {
                 <td className="px-3 py-2">
                   {sourceLabel(p)}
                   {p.sourceUrl && (
-                    <span> · <a href={p.sourceUrl} target="_blank" rel="noreferrer" className="text-blue-700 underline">{p.source === "keepa" ? "Keepa链接" : "渠道链接"}</a></span>
+                    <span> · <a href={p.sourceUrl} target="_blank" rel="noreferrer" className="text-blue-700 underline">{p.source === "keepa" ? "Keepa链接" : p.source === "ai-reco" ? "来源文章" : "渠道链接"}</a></span>
                   )}
                 </td>
                 <td className="px-3 py-2">{ip}</td>
