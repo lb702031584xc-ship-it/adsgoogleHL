@@ -184,6 +184,16 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           ],
         },
         {
+          title: s.sellerTool,
+          items: [
+            {
+              href: "/amazon/seller-tool",
+              label: ni.sellerToolProfitGate,
+              phase: ph.selection,
+            },
+          ],
+        },
+        {
           title: s.amazon,
                     items: [
             { href: "/amazon/manual-guide", label: ni.amazonManualGuide },

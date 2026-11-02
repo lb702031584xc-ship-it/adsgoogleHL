@@ -22,6 +22,7 @@ export const zh = {
     sections: {
       start: "🚀 新手上路",
       affiliate: "💰 联盟营销",
+      sellerTool: "🧰 亚马逊卖家工具",
       amazon: "🛒 Amazon 选品",
       cashback: "🎫 返利站",
       reports: "📈 数据报表",
@@ -56,6 +57,7 @@ export const zh = {
       amazonCombo: "组合测试",
       amazonWatch: "需求监控",
       amazonImportAffiliate: "转入 Offer 库（进联盟流程）",
+      sellerToolProfitGate: "选品潜力库与利润门",
       cashbackQuickstart: "新手 7 天 SOP",
       cashbackMonitor: "返利监控",
       cashbackOffers: "返利 Offer",
@@ -146,6 +148,7 @@ export const en: typeof zh = {
     sections: {
       start: "🚀 Getting Started",
       affiliate: "💰 Affiliate",
+      sellerTool: "🧰 Amazon Seller Tools",
       amazon: "🛒 Amazon",
       cashback: "🎫 Cashback",
       reports: "📈 Reports",
@@ -180,6 +183,7 @@ export const en: typeof zh = {
       amazonCombo: "Combo tests",
       amazonWatch: "Demand monitor",
       amazonImportAffiliate: "Move to Offer hub (affiliate flow)",
+      sellerToolProfitGate: "Potential Library & Profit Gate",
       cashbackQuickstart: "7-Day Starter SOP",
       cashbackMonitor: "Cashback Monitor",
       cashbackOffers: "Cashback Offers",
