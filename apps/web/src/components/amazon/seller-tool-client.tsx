@@ -12,6 +12,7 @@ import {
   type RecoCandidate,
   type RecoResult,
 } from "@/lib/api/seller-reco-actions";
+import { SellerKeywordLibrary } from "@/components/amazon/seller-keyword-library";
 
 /**
  * 卖家工具 P0 网页版：与桌面版 app.py 同一套筛选与利润逻辑。
@@ -496,11 +497,13 @@ export function SellerToolClient() {
   const [keepaSkipped, setKeepaSkipped] = useState(0);
 
   // AI 推荐（线索层：导入后仍是待核实，必须 Keepa 核实 + 补录成本后才算利润）
-  const [showReco, setShowReco] = useState(false);
-  const [recoDirection, setRecoDirection] = useState("");
+  const [showReco, setShowReco] = useState(false);  const [recoDirection, setRecoDirection] = useState("");
   const [recoLoading, setRecoLoading] = useState(false);
   const [recoError, setRecoError] = useState("");
   const [recoResult, setRecoResult] = useState<RecoResult | null>(null);
+
+  // P1 关键词库（面板见 seller-keyword-library.tsx，数据只存浏览器 localStorage）
+  const [showKeywords, setShowKeywords] = useState(false);
 
   // 补录成本（导入商品的成本/FBA/头程/月销量人工补录）
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -821,6 +824,10 @@ export function SellerToolClient() {
           className="rounded-lg bg-ink px-3 py-1.5 text-sm text-white">
           {showReco ? "收起 AI 推荐" : "AI 推荐"}
         </button>
+        <button type="button" onClick={() => setShowKeywords((v) => !v)}
+          className="rounded-lg bg-ink px-3 py-1.5 text-sm text-white">
+          {showKeywords ? "收起关键词库" : "关键词库"}
+        </button>
         <label className="cursor-pointer rounded-lg border border-ink/20 px-3 py-1.5 text-sm">
           导入 CSV
           <input type="file" accept=".csv" className="hidden"
@@ -1037,6 +1044,10 @@ export function SellerToolClient() {
             </div>
           )}
         </div>
+      )}
+
+      {showKeywords && (
+        <SellerKeywordLibrary products={products} />
       )}
 
       {showSettings && (
