@@ -64,8 +64,9 @@ services:
   redis:
     image: redis:7-alpine
     container_name: adlinklab-redis
-    ports:
-      - "6379:6379"
+    # 注意：不要再把 6379 发布到主机。2026-11-02 实测：对外发布的无密码 Redis
+    # 被外部写入 requirepass，导致 api 就绪检查持续 503。Redis 只留在容器网络
+    # 内部给 api/worker 用（REDIS_URL=redis://redis:6379 不变）。
     volumes:
       - redis_data:/data
     healthcheck:
