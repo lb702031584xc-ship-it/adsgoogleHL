@@ -80,8 +80,93 @@ describe("seller-reco", () => {
     expect(result.candidates).toHaveLength(1);
     expect(result.candidates[0].name).toBe("宠物除毛梳");
     expect(result.candidates[0].priceHint).toBe(15.99);
+    // 3 次方向查询 + 1 次货源查询（1 条候选）。
+    expect(result.serpCalls).toBe(4);
+    expect(result.serpCostEstimateUsd).toBeCloseTo(0.008);
+    // 货源 stub 与方向 stub 相同：只有 1 条非批发 organic 链接。
+    expect(result.candidates[0].sourcing).toEqual([
+      {
+        title: "Best pet grooming brushes 2026",
+        url: "https://example.com/best-pet-brushes",
+        kind: "other",
+      },
+    ]);
+  });
+
+  it("货源排序：批发平台在前、去重、截断到 3 条", async () => {
+    const sourcingItems = [
+      { type: "organic", title: "Amazon listing", url: "https://www.amazon.com/dp/EXAMPLE", description: "" },
+      { type: "organic", title: "Alibaba supplier", url: "https://www.alibaba.com/product-detail/x.html", description: "" },
+      { type: "organic", title: "Alibaba dup", url: "https://www.alibaba.com/product-detail/x.html", description: "" },
+      { type: "organic", title: "Blog", url: "https://example.com/blog", description: "" },
+      { type: "organic", title: "Faire brand", url: "https://www.faire.com/product/y", description: "" },
+      { type: "organic", title: "DHgate", url: "https://www.dhgate.com/product/z.html", description: "" },
+    ];
+    let n = 0;
+    const fetchImpl = vi.fn(async () => {
+      n += 1;
+      return serpResponse(n <= 3 ? ORGANIC : sourcingItems) as never;
+    });
+    const chatJsonImpl = vi.fn(async () => ({
+      candidates: [
+        {
+          name: "宠物除毛梳",
+          category: "宠物用品",
+          why: "榜单首位提及除毛梳。",
+          priceHint: 15.99,
+          sources: ["https://example.com/best-pet-brushes"],
+        },
+      ],
+    }));
+    const result = await recommendSellerProducts(
+      {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        chatJsonImpl,
+        dataforseoCreds: { login: "l", password: "p" },
+        llm: { baseUrl: "https://x", model: "m", apiKey: "k" },
+      },
+      { direction: "宠物用品", limit: 5 }
+    );
+    expect(result.serpCalls).toBe(4);
+    expect(result.candidates[0].sourcing.map((l) => l.url)).toEqual([
+      "https://www.alibaba.com/product-detail/x.html",
+      "https://www.faire.com/product/y",
+      "https://www.dhgate.com/product/z.html",
+    ]);
+    expect(result.candidates[0].sourcing.every((l) => l.kind === "wholesale")).toBe(true);
+  });
+
+  it("货源搜索失败不影响候选，只记警告", async () => {
+    let n = 0;
+    const fetchImpl = vi.fn(async () => {
+      n += 1;
+      if (n <= 3) return serpResponse(ORGANIC) as never;
+      throw new Error("网络异常");
+    });
+    const chatJsonImpl = vi.fn(async () => ({
+      candidates: [
+        {
+          name: "宠物除毛梳",
+          category: "宠物用品",
+          why: "榜单首位提及除毛梳。",
+          priceHint: 15.99,
+          sources: ["https://example.com/best-pet-brushes"],
+        },
+      ],
+    }));
+    const result = await recommendSellerProducts(
+      {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        chatJsonImpl,
+        dataforseoCreds: { login: "l", password: "p" },
+        llm: { baseUrl: "https://x", model: "m", apiKey: "k" },
+      },
+      { direction: "宠物用品", limit: 5 }
+    );
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].sourcing).toEqual([]);
     expect(result.serpCalls).toBe(3);
-    expect(result.serpCostEstimateUsd).toBeCloseTo(0.006);
+    expect(result.warnings.join("")).toContain("货源搜索失败");
   });
 
   it("SERP 无可用结果时返回空候选且不调用模型", async () => {

@@ -729,6 +729,16 @@ export function SellerToolClient() {
     setRecoResult(res.data);
   };
 
+  // 选品提示（硬逻辑，不编数字）：榜单价同时低于价格下限与单件利润线时，
+  // 即使采购/FBA/头程全是 0 也过不了利润门，直接提示不建议做；未标价时无法判断，不提示。
+  const recoGateFlag = (c: RecoCandidate): string | null => {
+    if (c.priceHint == null) return null;
+    if (c.priceHint < settings.minPrice && c.priceHint < settings.minProfitRule) {
+      return `不建议做：榜单价 $${c.priceHint}，低于价格下限 $${settings.minPrice} 且即使零成本也达不到单件利润线 $${settings.minProfitRule}，无需再投入核实。`;
+    }
+    return null;
+  };
+
   const importRecoCandidate = (c: RecoCandidate) => {
     const nameKey = c.name.trim().toLowerCase();
     if (products.some((p) => p.name.trim().toLowerCase() === nameKey)) return;
@@ -741,6 +751,12 @@ export function SellerToolClient() {
       noteParts.push(`榜单提及价 $${c.priceHint}（仅供参考，未核实）`);
     } else {
       noteParts.push("售价未标，需核实后填写");
+    }
+    const gateFlag = recoGateFlag(c);
+    if (gateFlag) noteParts.push(gateFlag);
+    const sourcing = c.sourcing ?? [];
+    if (sourcing.length > 0) {
+      noteParts.push(`货源参考（仅作询价起点，价格与起订量以打开页面为准）：${sourcing.map((s) => s.url).join("、")}`);
     }
     noteParts.push("请用 Keepa 粘贴核实价格/排名/评论后再补录成本算利润");
     const product: Product = {
@@ -761,7 +777,10 @@ export function SellerToolClient() {
       notes: noteParts.join("；"),
       source: "ai-reco",
       sourceNetwork: "AI推荐",
-      sourceUrl: c.sources[0] ?? null,
+      sourceUrl: (c.sourcing ?? []).find((s) => s.kind === "wholesale")?.url
+        ?? (c.sourcing ?? [])[0]?.url
+        ?? c.sources[0]
+        ?? null,
       sourceExternalId: null,
       affiliateCommission: null,
       costUnknown: true,
@@ -960,7 +979,9 @@ export function SellerToolClient() {
             输入一个方向（如“宠物用品”“户外收纳”），后端用 DataForSEO 查公开榜单和文章，
             再由大模型综合成候选，每条都带来源链接。没有搜索证据时不推荐，绝不编造销量、
             排名、评论数。导入后一律标“待补录”：请先用 Keepa 粘贴核实价格/排名/评论，再补录
-            成本算利润。每次推荐约查 3 次 SERP（估算 $0.006），另有大模型调用费用；限流 20 次/分钟。
+            成本算利润。每次推荐约查 3 次方向 SERP（估算 $0.006）+ 每候选 1 次货源 SERP
+            （每候选约 $0.002，优先国外批发平台链接，仅作询价起点），另有大模型调用费用；限流 20 次/分钟。
+            榜单价同时低于价格下限与单件利润线时，卡片会直接提示不建议做（即使零成本也过不了利润门）。
             需要先在管理控制台 → AI 设置里配好 DataForSEO 凭证（并在官网完成账号验证）与大模型密钥。
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -982,13 +1003,26 @@ export function SellerToolClient() {
               </p>
               {recoResult.candidates.map((c) => {
                 const imported = products.some((p) => p.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+                const flag = recoGateFlag(c);
+                const sourcing = c.sourcing ?? [];
                 return (
                   <div key={c.name} className="rounded border border-ink/10 p-3">
                     <p className="font-medium">{c.name}{c.category ? ` · ${c.category}` : ""}</p>
                     <p className="mt-1 text-sm">{c.why}</p>
+                    {flag && <p className="mt-1 text-sm text-red-700">{flag}</p>}
                     <p className="mt-1 text-xs text-ink/55">
-                      {c.priceHint != null ? `榜单提及价 $${c.priceHint}（仅供参考，未核实）` : "售价未标，需核实后填写"} · 来源：
+                      {c.priceHint != null ? `榜单提及价 $${c.priceHint}（仅供参考，未核实）` : "售价未标：先核到售价再决定是否投入核实，过不了利润门判断"} · 来源：
                       {c.sources.map((u, i) => (<span key={u}>{i > 0 ? "、" : ""}<a href={u} target="_blank" rel="noreferrer" className="text-blue-700 underline">来源{i + 1}</a></span>))}
+                    </p>
+                    <p className="mt-1 text-xs text-ink/55">
+                      货源（优先国外批发平台，仅作询价起点，价格与起订量以打开页面为准）：
+                      {sourcing.length > 0 ? (
+                        sourcing.map((s, i) => (
+                          <span key={s.url}>{i > 0 ? "、" : ""}<a href={s.url} target="_blank" rel="noreferrer" className="text-blue-700 underline">{s.kind === "wholesale" ? "批发：" : ""}{s.title || s.url}</a></span>
+                        ))
+                      ) : (
+                        "暂未找到货源链接（品名是中文时命中率较低，可换英文品名方向再试）"
+                      )}
                     </p>
                     <button type="button" onClick={() => importRecoCandidate(c)} disabled={imported}
                       className="mt-2 rounded-lg border border-ink/20 px-3 py-1 text-sm disabled:opacity-50">
@@ -1139,7 +1173,7 @@ export function SellerToolClient() {
                 <td className="px-3 py-2">
                   {sourceLabel(p)}
                   {p.sourceUrl && (
-                    <span> · <a href={p.sourceUrl} target="_blank" rel="noreferrer" className="text-blue-700 underline">{p.source === "keepa" ? "Keepa链接" : p.source === "ai-reco" ? "来源文章" : "渠道链接"}</a></span>
+                    <span> · <a href={p.sourceUrl} target="_blank" rel="noreferrer" className="text-blue-700 underline">{p.source === "keepa" ? "Keepa链接" : p.source === "ai-reco" ? "AI推荐来源" : "渠道链接"}</a></span>
                   )}
                 </td>
                 <td className="px-3 py-2">{ip}</td>

@@ -11,12 +11,20 @@ import {
 } from "./entities-config";
 import { sessionHeaders } from "./session";
 
+export interface RecoSourcingLink {
+  title: string;
+  url: string;
+  kind: "wholesale" | "other";
+}
+
 export interface RecoCandidate {
   name: string;
   category: string;
   why: string;
   priceHint: number | null;
   sources: string[];
+  /** 货源 SERP 结果（≤3 条，批发平台优先）；老版本后端返回时可能缺失。 */
+  sourcing?: RecoSourcingLink[];
 }
 
 export interface RecoSource {
@@ -29,6 +37,7 @@ export interface RecoResult {
   candidates: RecoCandidate[];
   sources: RecoSource[];
   queries: string[];
+  sourcingQueries?: string[];
   serpCalls: number;
   serpCostEstimateUsd: number;
   warnings: string[];
