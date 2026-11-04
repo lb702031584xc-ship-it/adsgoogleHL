@@ -184,6 +184,16 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           ],
         },
         {
+          title: s.quant,
+          items: [
+            {
+              href: "/quant",
+              label: ni.quantScreen,
+              phase: ph.selection,
+            },
+          ],
+        },
+        {
           title: s.sellerTool,
           items: [
             {
