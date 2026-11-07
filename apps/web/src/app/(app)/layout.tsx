@@ -194,6 +194,16 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           ],
         },
         {
+          title: s.cnQuant,
+          items: [
+            {
+              href: "/cn-quant",
+              label: ni.cnQuantScreen,
+              phase: ph.selection,
+            },
+          ],
+        },
+        {
           title: s.sellerTool,
           items: [
             {
