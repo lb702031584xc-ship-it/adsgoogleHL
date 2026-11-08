@@ -6,6 +6,8 @@
  *   未知意图与非购买意图都出局
  * - 主投口径（2026-11-08）：有量且购买意图才进主投；测算表有量在前按 CPC 升序、
  *   无量沉底；导入只放行有量且购买意图的词
+ * - 种子词锚点（2026-11-08 跟进）：测算关键词表种子词排第一、同词去重；
+ *   参考行只在测算返回里找到种子词时才展示
  * - 型号词稳定前置、勾选跨批次保留
  * - 本批 dict 新键中英齐全、占位符完整
  */
@@ -13,9 +15,11 @@ import { describe, expect, it } from "vitest";
 import { en, zh } from "../../i18n/dict/keyword-starter";
 import {
   applyIntentOutcomes,
+  buildMeasureKeywords,
   classifyLocalOutcomes,
   countLocalSurvivors,
   countOutcome,
+  findSeedRow,
   hasModelToken,
   hasVolume,
   isBuyIntent,
@@ -337,6 +341,38 @@ describe("splitImportWords（导入守门）", () => {
   });
 });
 
+describe("buildMeasureKeywords / findSeedRow（种子词锚点 2026-11-08）", () => {
+  it("种子词排第一，勾选词随后；同词去重（大小写不敏感）", () => {
+    expect(buildMeasureKeywords("ogee", ["ogee makeup", "ogee"])).toEqual([
+      "ogee",
+      "ogee makeup",
+    ]);
+    expect(buildMeasureKeywords("Ogee", ["OGEE MAKEUP"])).toEqual([
+      "Ogee",
+      "OGEE MAKEUP",
+    ]);
+  });
+
+  it("空种子不加，只测勾选词；不改入参", () => {
+    const picked = ["a", "b"];
+    expect(buildMeasureKeywords("   ", picked)).toEqual(["a", "b"]);
+    expect(buildMeasureKeywords("", picked)).toEqual(["a", "b"]);
+    expect(picked).toEqual(["a", "b"]);
+  });
+
+  it("参考行只在返回里找到种子词时才有；找不到不编造", () => {
+    const rows = [
+      { keyword: "ogee makeup", searchVolume: 22000, cpc: 2.08 },
+      { keyword: "ogee", searchVolume: 5000, cpc: 1.1 },
+    ];
+    expect(findSeedRow(rows, "ogee")?.keyword).toBe("ogee");
+    expect(findSeedRow(rows, "OGEE")?.keyword).toBe("ogee");
+    expect(findSeedRow(rows, "dooney")).toBeUndefined();
+    expect(findSeedRow(rows, "   ")).toBeUndefined();
+    expect(findSeedRow([], "ogee")).toBeUndefined();
+  });
+});
+
 describe("dict 新键（dfs）", () => {
   it("中英齐全且非空", () => {
     for (const d of [zh.dfs, en.dfs]) {
@@ -359,6 +395,8 @@ describe("dict 新键（dfs）", () => {
       expect(d.importExcludedNote).toContain("{m}");
       expect(d.importBlockedWords).toContain("{words}");
       expect(d.importNoneEligible.length).toBeGreaterThan(0);
+      expect(d.seedRefLabel.length).toBeGreaterThan(0);
+      expect(d.seedRefNote.length).toBeGreaterThan(10);
     }
   });
 

@@ -9,6 +9,9 @@
  * 筛选是标记不是删除：全量候选常驻，被过滤的词折叠可展开、可人工勾选
  * 保留；改参数重跑筛选、或重跑扩词（缓存命中同一批），都不清空已有勾选。
  * 测算结果硬隔离：不写入任何出价字段，出价唯一来源是投流页盈利测算。
+ * 种子词锚点（2026-11-08）：扩词剔除了种子词本身，测算时把它带上，在测算表
+ * 顶部单列一行参考——锚点有量而组合词无量，说明问题在生词本身，不在测算；
+ * 种子词不进候选、不进导入、不计入可投数。
  */
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -26,10 +29,12 @@ import type { KeywordStarterDict } from "@/i18n/dict/keyword-starter";
 import { PaidDataBillingNote } from "@/components/paid-data/billing-note";
 import {
   applyIntentOutcomes,
+  buildMeasureKeywords,
   classifyLocalOutcomes,
   competitionLevelOf,
   countLocalSurvivors,
   countOutcome,
+  findSeedRow,
   hasModelToken,
   hasVolume,
   isMainListEligible,
@@ -111,6 +116,8 @@ export function LongtailPipelineClient({
   const [measuring, setMeasuring] = useState(false);
   const [measureError, setMeasureError] = useState<string | null>(null);
   const [measure, setMeasure] = useState<DfsMeasureResult | null>(null);
+  /** 测算时用的种子词原文（锚点对照）；换批/重筛时随测算结果一起作废。 */
+  const [measuredSeed, setMeasuredSeed] = useState<string | null>(null);
 
   // Offer 带入种子词（用户手动改过就不再覆盖）
   const [seedTouched, setSeedTouched] = useState(false);
@@ -181,14 +188,26 @@ export function LongtailPipelineClient({
     return splitImportWords(pickedWords, candByKey, measureByKey);
   }, [candidates, pickedWords, measure]);
 
-  /** 测算表展示序：有量词在前按 CPC 升序，无量词沉底（主投清单口径）。 */
+  /** 种子词参考行：只在测算返回里找到它时才展示；被 limit 截掉就不展示，不编造。 */
+  const seedRow = useMemo(() => {
+    if (!measure || !measuredSeed) return undefined;
+    return findSeedRow(measure.rows, measuredSeed);
+  }, [measure, measuredSeed]);
+
+  /** 测算表展示序：有量词在前按 CPC 升序，无量词沉底（主投清单口径）。
+      种子词行已在顶部单列参考，不在表里重复出现。 */
   const displayMeasureRows = useMemo(() => {
     if (!measure) return [];
     const sorted = sortMeasureDisplay(measure.rows);
-    return onlyWithVolume
-      ? sorted.filter((r) => hasVolume(r.searchVolume))
+    const withoutSeed = seedRow
+      ? sorted.filter(
+          (r) => r.keyword.toLowerCase() !== seedRow.keyword.toLowerCase()
+        )
       : sorted;
-  }, [measure, onlyWithVolume]);
+    return onlyWithVolume
+      ? withoutSeed.filter((r) => hasVolume(r.searchVolume))
+      : withoutSeed;
+  }, [measure, onlyWithVolume, seedRow]);
 
   async function doExpand() {
     const s = seed.trim();
@@ -224,6 +243,7 @@ export function LongtailPipelineClient({
         )
       );
       setMeasure(null);
+      setMeasuredSeed(null);
       setMeasureError(null);
     } finally {
       setExpanding(false);
@@ -281,6 +301,7 @@ export function LongtailPipelineClient({
       // 不清勾选：改参数重跑筛选，已勾的词（含人工保留）继续算数；
       // 只有测算结果作废（口径变了，旧测算不能冒充新结论）。
       setMeasure(null);
+      setMeasuredSeed(null);
       setMeasureError(null);
     } finally {
       setFiltering(false);
@@ -292,17 +313,30 @@ export function LongtailPipelineClient({
     setMeasuring(true);
     setMeasureError(null);
     try {
+      // 种子词锚点：扩词剔除了种子词本身，测算时把它带上作参考行——
+      // 种子词不进候选、不进导入，只证明锚点本身有没有量；同一次请求内
+      // 测，不另花一次调用。种子词新占一个位置时上限 +1，避免它把勾选
+      // 词挤出返回（服务端按量降序取前 limit 条）。
+      const seedForMeasure = seed.trim().length >= 2 ? seed.trim() : "";
+      const keywords = buildMeasureKeywords(seedForMeasure, pickedWords);
+      const limit = parseBoundedInt(measureLimitRaw, 20, 5, 100);
+      const seedAdded =
+        seedForMeasure !== "" &&
+        !pickedWords.some(
+          (w) => w.toLowerCase() === seedForMeasure.toLowerCase()
+        );
       const res = await adMeasureAction({
-        keywords: pickedWords,
+        keywords,
         locationCode,
         languageCode,
-        limit: parseBoundedInt(measureLimitRaw, 20, 5, 100),
+        limit: Math.min(100, limit + (seedAdded ? 1 : 0)),
       });
       if (!res.ok) {
         setMeasureError(res.error);
         return;
       }
       setMeasure(res.data);
+      setMeasuredSeed(seedForMeasure || null);
     } finally {
       setMeasuring(false);
     }
@@ -338,6 +372,19 @@ export function LongtailPipelineClient({
   const hintCls = "text-[11px] leading-snug text-ink/45";
   const badgeCls =
     "ml-1.5 inline-block rounded-full px-1.5 py-px align-middle text-[10px] font-medium";
+
+  /** 有量/无量结论徽章（测算表与种子词参考行共用）。 */
+  function verdictBadge(searchVolume: number | null) {
+    return hasVolume(searchVolume) ? (
+      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+        {t.hasVolumeLabel}
+      </span>
+    ) : (
+      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+        {t.noVolumeLabel}
+      </span>
+    );
+  }
 
   function renderRow(c: PipelineCandidate) {
     const level = competitionLevelOf(c);
@@ -737,6 +784,20 @@ export function LongtailPipelineClient({
                   .replace("{x}", String(measure.requestedCount))
                   .replace("{y}", String(measure.total))}
               </p>
+              {seedRow && measuredSeed && (
+                <p className="mt-1.5 rounded-lg bg-sky-50 px-3 py-2 text-xs leading-relaxed text-sky-800">
+                  {t.seedRefLabel}{" "}
+                  <span className="font-semibold">{measuredSeed}</span>
+                  {" · "}
+                  {d.thVolume} {fmtNum(seedRow.searchVolume)}
+                  {" · "}
+                  {t.thCpc} {fmtMoney(seedRow.cpc)}{" "}
+                  {verdictBadge(seedRow.searchVolume)}
+                  <span className="mt-0.5 block text-sky-700/70">
+                    {t.seedRefNote}
+                  </span>
+                </p>
+              )}
               <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
                 ⚠️ {t.estimateNote}
               </p>
@@ -775,15 +836,7 @@ export function LongtailPipelineClient({
                           {fmtNum(r.searchVolume)}
                         </td>
                         <td className="py-1.5 pr-2">
-                          {hasVolume(r.searchVolume) ? (
-                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
-                              {t.hasVolumeLabel}
-                            </span>
-                          ) : (
-                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                              {t.noVolumeLabel}
-                            </span>
-                          )}
+                          {verdictBadge(r.searchVolume)}
                         </td>
                         <td className="py-1.5 pr-2 text-ink/70">
                           {fmtMoney(r.cpc)}

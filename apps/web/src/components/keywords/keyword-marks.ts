@@ -7,6 +7,9 @@
  * - 主投口径（2026-11-08 用户定）：主投只取"有量且购买意图"的词；
  *   searchVolume 为 null/0 → 无量，不进主投；意图未知 → 不进主投；
  *   review / compare / info 意图 → 不进主投。无量词不得标"可投"。
+ * - 种子词锚点（2026-11-08 跟进）：扩词会剔除种子词本身，测算表里从来没有
+ *   锚点，满屏"无量"时用户会误以为测算坏了；测算时把种子词带上，只作参考行，
+ *   不进候选、不进导入。
  */
 import type { DfsCandidate } from "@/lib/api/keyword-dataforseo-actions";
 
@@ -204,6 +207,44 @@ export function keepSelectionWithin(
   const next = new Set<string>();
   for (const k of prev) if (alive.has(k)) next.add(k);
   return next;
+}
+
+/**
+ * 测算关键词表：种子词排第一（同词去重，不重复测），再跟勾选词。
+ * 种子词本身不是候选（扩词已剔除），测算时带上只为锚点对照；空种子不加。
+ */
+export function buildMeasureKeywords(
+  seed: string,
+  pickedWords: readonly string[]
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const s = seed.trim();
+  if (s) {
+    seen.add(s.toLowerCase());
+    out.push(s);
+  }
+  for (const w of pickedWords) {
+    const key = w.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(w);
+  }
+  return out;
+}
+
+/**
+ * 在测算返回行里找种子词行（大小写不敏感）。
+ * 服务端按量降序取前 limit 条，种子词量低时可能被截掉——找不到返回
+ * undefined，调用方就不展示参考行，绝不拿"—"冒充测过。
+ */
+export function findSeedRow<T extends { keyword: string }>(
+  rows: readonly T[],
+  seed: string
+): T | undefined {
+  const key = seed.trim().toLowerCase();
+  if (!key) return undefined;
+  return rows.find((r) => r.keyword.toLowerCase() === key);
 }
 
 /**

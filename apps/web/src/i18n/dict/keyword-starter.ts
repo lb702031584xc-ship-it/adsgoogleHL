@@ -127,6 +127,9 @@ export interface KeywordStarterDict {
     hasVolumeLabel: string;
     onlyWithVolume: string;
     measureSortNote: string;
+    /** 种子词锚点参考行标签与说明（测算表顶部，不进候选/导入）。 */
+    seedRefLabel: string;
+    seedRefNote: string;
     competitionLevels: Record<"LOW" | "MEDIUM" | "HIGH", string>;
     intentLabels: Record<"informational" | "navigational" | "commercial" | "transactional", string>;
     emptyCandidates: string;
@@ -337,6 +340,8 @@ export const zh: KeywordStarterDict = {
     hasVolumeLabel: "有量",
     onlyWithVolume: "仅看有量词",
     measureSortNote: "有量词按 CPC 升序排列，无量词沉底",
+    seedRefLabel: "种子词（参考）",
+    seedRefNote: "种子词不进候选、不进导入，只作锚点对照——锚点有量而组合词无量，说明问题在生词本身，不在测算。",
     competitionLevels: { LOW: "低", MEDIUM: "中", HIGH: "高" },
     intentLabels: { informational: "信息", navigational: "导航", commercial: "商业", transactional: "交易" },
     emptyCandidates: "还没有候选词。先在第 ① 步输入种子词点「扩词」。",
@@ -552,6 +557,8 @@ export const en: KeywordStarterDict = {
     hasVolumeLabel: "Has volume",
     onlyWithVolume: "Only keywords with volume",
     measureSortNote: "Keywords with volume sorted by CPC ascending; no-volume keywords at the bottom",
+    seedRefLabel: "Seed keyword (reference)",
+    seedRefNote: "The seed is never a candidate and never imported; it is only an anchor — if the anchor has volume while the combos don't, the combos are the problem, not the measurement.",
     competitionLevels: { LOW: "Low", MEDIUM: "Medium", HIGH: "High" },
     intentLabels: { informational: "Informational", navigational: "Navigational", commercial: "Commercial", transactional: "Transactional" },
     emptyCandidates: "No candidates yet. Enter a seed keyword in step 1 and hit “Expand”.",
