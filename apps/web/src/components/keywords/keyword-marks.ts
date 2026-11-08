@@ -4,6 +4,9 @@
  * - 本地筛选 outcome 分类：pass / out-volume / out-competition / out-intent
  *   ——筛选只做标记不删词，被过滤的词可展开、可人工勾选保留
  * - 型号词稳定前置、勾选跨筛选/重扩保留等列表口径
+ * - 主投口径（2026-11-08 用户定）：主投只取"有量且购买意图"的词；
+ *   searchVolume 为 null/0 → 无量，不进主投；意图未知 → 不进主投；
+ *   review / compare / info 意图 → 不进主投。无量词不得标"可投"。
  */
 import type { DfsCandidate } from "@/lib/api/keyword-dataforseo-actions";
 
@@ -92,9 +95,27 @@ export function passesCompetition(
   return level === "LOW" || level === "MEDIUM";
 }
 
+/** 有量：searchVolume 明确 > 0。null / 0 都是无量——未知量不是"有量"，不能冒充。 */
+export function hasVolume(searchVolume: number | null): searchVolume is number {
+  return searchVolume != null && searchVolume > 0;
+}
+
+/** 购买意图：只认 DataForSEO 的 commercial / transactional。 */
+export function isBuyIntent(intent: string | null | undefined): boolean {
+  return intent === "commercial" || intent === "transactional";
+}
+
+/** 主投资格：有量且购买意图。意图未知（null）不进主投。 */
+export function isMainListEligible(c: {
+  searchVolume: number | null;
+  intent?: string | null;
+}): boolean {
+  return hasVolume(c.searchVolume) && isBuyIntent(c.intent ?? null);
+}
+
 export function passesVolume(c: DfsCandidate, minVolume: number): boolean {
-  if (minVolume <= 0) return true;
-  if (c.searchVolume === null) return true; // 未知不误杀
+  // 无量（null/0）不进主投：主投只取有量词，与 minVolume 阈值无关。
+  if (!hasVolume(c.searchVolume)) return false;
   return c.searchVolume >= minVolume;
 }
 
@@ -119,8 +140,9 @@ export function classifyLocalOutcomes(
 
 /**
  * 意图过滤结果并入 outcome：只动当前 pass 的行；意图明确非 commercial /
- * transactional → out-intent；意图未知（null 或结果缺失）保持 pass 并标记
- * 未验证（fail-soft，不丢词）。返回新 Map，不改入参。
+ * transactional → out-intent；意图未知（null 或结果缺失）→ out-intent 且标
+ * 未验证（2026-11-08 用户定：意图未知不进主投，可人工勾选保留）。
+ * 返回新 Map，不改入参。
  */
 export function applyIntentOutcomes(
   outcomes: ReadonlyMap<string, FilterOutcome>,
@@ -132,6 +154,8 @@ export function applyIntentOutcomes(
     if (outcome !== "pass") continue;
     const intent = intents.get(key) ?? null;
     if (intent === null) {
+      // 意图未知不进主投（可人工勾选保留）；仍记未验证，供页面提示。
+      next.set(key, "out-intent");
       hasUnverified = true;
       continue;
     }
@@ -180,4 +204,74 @@ export function keepSelectionWithin(
   const next = new Set<string>();
   for (const k of prev) if (alive.has(k)) next.add(k);
   return next;
+}
+
+/**
+ * 测算表展示序（主投清单口径）：有量词在前、按 CPC 升序（CPC 为 null 排组内最后），
+ * 无量词沉底保原序。绝不拿 0 冒充数据。
+ */
+export function sortMeasureDisplay<
+  T extends { searchVolume: number | null; cpc: number | null },
+>(rows: readonly T[]): T[] {
+  const withVolume = rows.filter((r) => hasVolume(r.searchVolume));
+  const noVolume = rows.filter((r) => !hasVolume(r.searchVolume));
+  withVolume.sort((a, b) => {
+    if (a.cpc === null && b.cpc === null) return 0;
+    if (a.cpc === null) return 1;
+    if (b.cpc === null) return -1;
+    return a.cpc - b.cpc;
+  });
+  return [...withVolume, ...noVolume];
+}
+
+export type ImportBlockReason = "no-volume" | "non-buy-intent" | "unknown";
+
+export interface ImportBlock {
+  keyword: string;
+  reason: ImportBlockReason;
+}
+
+/**
+ * 导入守门：只有"有量且购买意图"的词能进投放。量以测算结果为准（已测算时）、
+ * 否则用扩词量；意图取筛选步的意图标签。被拦的词带原因返回，调用方展示、
+ * 不得悄悄建进去。
+ */
+export function splitImportWords(
+  words: readonly string[],
+  candidatesByKey: ReadonlyMap<
+    string,
+    { searchVolume: number | null; intent?: string | null }
+  >,
+  measureByKey: ReadonlyMap<string, { searchVolume: number | null }>
+): { eligible: string[]; blocked: ImportBlock[] } {
+  const eligible: string[] = [];
+  const blocked: ImportBlock[] = [];
+  for (const word of words) {
+    const key = word.toLowerCase();
+    const cand = candidatesByKey.get(key);
+    if (!cand) {
+      blocked.push({ keyword: word, reason: "unknown" });
+      continue;
+    }
+    // 量以测算结果为准：测算行存在时（哪怕量为 null）不回落到扩词量；
+    // 只有未测算的词才用扩词量。
+    const measured = measureByKey.get(key);
+    const volume =
+      measured !== undefined ? measured.searchVolume : cand.searchVolume;
+    if (!hasVolume(volume)) {
+      blocked.push({ keyword: word, reason: "no-volume" });
+      continue;
+    }
+    const intent = cand.intent ?? null;
+    if (intent === null) {
+      blocked.push({ keyword: word, reason: "unknown" });
+      continue;
+    }
+    if (!isBuyIntent(intent)) {
+      blocked.push({ keyword: word, reason: "non-buy-intent" });
+      continue;
+    }
+    eligible.push(word);
+  }
+  return { eligible, blocked };
 }

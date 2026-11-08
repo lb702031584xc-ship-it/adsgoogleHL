@@ -122,6 +122,11 @@ export interface KeywordStarterDict {
     thCpc: string;
     thBidRange: string;
     thCompIndex: string;
+    thVerdict: string;
+    noVolumeLabel: string;
+    hasVolumeLabel: string;
+    onlyWithVolume: string;
+    measureSortNote: string;
     competitionLevels: Record<"LOW" | "MEDIUM" | "HIGH", string>;
     intentLabels: Record<"informational" | "navigational" | "commercial" | "transactional", string>;
     emptyCandidates: string;
@@ -134,6 +139,9 @@ export interface KeywordStarterDict {
     estimateNote: string;
     measuredLine: string;
     importBtn: string;
+    importExcludedNote: string;
+    importBlockedWords: string;
+    importNoneEligible: string;
     failed: string;
     /** 付费数据网关计费路径标注（付费按钮旁）。 */
     billing: {
@@ -324,6 +332,11 @@ export const zh: KeywordStarterDict = {
     thCpc: "估算 CPC",
     thBidRange: "页首出价区间",
     thCompIndex: "竞争指数",
+    thVerdict: "结论",
+    noVolumeLabel: "无量",
+    hasVolumeLabel: "有量",
+    onlyWithVolume: "仅看有量词",
+    measureSortNote: "有量词按 CPC 升序排列，无量词沉底",
     competitionLevels: { LOW: "低", MEDIUM: "中", HIGH: "高" },
     intentLabels: { informational: "信息", navigational: "导航", commercial: "商业", transactional: "交易" },
     emptyCandidates: "还没有候选词。先在第 ① 步输入种子词点「扩词」。",
@@ -336,6 +349,9 @@ export const zh: KeywordStarterDict = {
     estimateNote: "以下为 DataForSEO 估算数据 · 仅供参考，不参与出价计算（出价仍按投流页盈利测算）",
     measuredLine: "测算完成：勾选 {x} 条，返回前 {y} 条（按搜索量降序）",
     importBtn: "把已勾 {n} 个词导入投放 →",
+    importExcludedNote: "已排除 {n} 条（无量或非购买意图），仅导入 {m} 条。",
+    importBlockedWords: "排除的词：{words}",
+    importNoneEligible: "勾选的词全部无量或非购买意图，无法导入。",
     failed: "操作失败，请稍后重试",
     billing: {
       platform: "使用平台额度·剩余 {n} 次",
@@ -531,6 +547,11 @@ export const en: KeywordStarterDict = {
     thCpc: "Est. CPC",
     thBidRange: "Top-of-page bid range",
     thCompIndex: "Competition index",
+    thVerdict: "Verdict",
+    noVolumeLabel: "No volume",
+    hasVolumeLabel: "Has volume",
+    onlyWithVolume: "Only keywords with volume",
+    measureSortNote: "Keywords with volume sorted by CPC ascending; no-volume keywords at the bottom",
     competitionLevels: { LOW: "Low", MEDIUM: "Medium", HIGH: "High" },
     intentLabels: { informational: "Informational", navigational: "Navigational", commercial: "Commercial", transactional: "Transactional" },
     emptyCandidates: "No candidates yet. Enter a seed keyword in step 1 and hit “Expand”.",
@@ -543,6 +564,9 @@ export const en: KeywordStarterDict = {
     measuredLine: "Measured: {x} picked, top {y} returned (by search volume)",
     measureNeedPick: "Pick keywords first (measurement only pays for picked ones)",
     importBtn: "Import {n} picked keywords to launch →",
+    importExcludedNote: "{n} excluded (no volume or non-buy intent); importing {m} only.",
+    importBlockedWords: "Excluded: {words}",
+    importNoneEligible: "All picked keywords have no volume or non-buy intent — nothing to import.",
     failed: "Something failed, please try again",
     billing: {
       platform: "Platform quota · {n} left",

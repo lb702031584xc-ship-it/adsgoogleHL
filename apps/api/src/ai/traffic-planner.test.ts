@@ -61,6 +61,25 @@ describe("computeKeywordMath", () => {
     expect(rows[0].verdict).toBe("数据不足");
     expect(epcVerdict).toBeNull();
   });
+
+  it("无量词标「无量」不参与盈亏判断，即使 CPC 本来买得起", () => {
+    const profile = getComboProfile("landing", "allowed");
+    const { rows } = computeKeywordMath(
+      {
+        ...baseInput,
+        keywords: [
+          { keyword: "no volume cheap", volume: 0, cpc: 0.1 },
+          { keyword: "has volume cheap", volume: 100, cpc: 0.1 },
+        ],
+      },
+      profile
+    );
+    expect(rows[0].verdict).toBe("无量");
+    expect(rows[0].affordable).toBeNull();
+    expect(rows[0].breakEvenCvrPct).toBeNull();
+    expect(rows[0].maxBid).toBeNull();
+    expect(rows[1].affordable).toBe(true);
+  });
 });
 
 describe("buildTrafficPlanPrompt", () => {

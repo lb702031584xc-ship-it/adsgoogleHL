@@ -149,6 +149,15 @@ export function computeKeywordMath(
   }
 
   const rows: KeywordMath[] = input.keywords.map((k) => {
+    // 无量词不得标"可投"（2026-11-08）：月搜索量明确为 0 → 结论"无量"，
+    // 不参与盈亏判断。量未知（undefined）时沿用原有逻辑——未测算不等于无量。
+    if (k.volume != null && k.volume <= 0) {
+      return {
+        keyword: k.keyword, refCpc: k.plannerLow ?? k.cpc ?? null,
+        breakEvenCvrPct: null, maxBid: null,
+        affordable: null, verdict: "无量",
+      };
+    }
     const refCpc = k.plannerLow ?? k.cpc ?? null;
     if (refCpc == null || input.payout == null || input.payout <= 0) {
       return {

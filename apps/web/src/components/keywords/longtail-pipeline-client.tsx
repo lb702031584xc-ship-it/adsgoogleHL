@@ -31,11 +31,16 @@ import {
   countLocalSurvivors,
   countOutcome,
   hasModelToken,
+  hasVolume,
+  isMainListEligible,
   isOwnedUserRisk,
   keepSelectionWithin,
   modelFirstStable,
+  sortMeasureDisplay,
+  splitImportWords,
   type CompetitionMode,
   type FilterOutcome,
+  type ImportBlock,
 } from "./keyword-marks";
 
 /** 候选行 = 扩词候选 + 意图过滤后附加的意图标签。 */
@@ -97,6 +102,8 @@ export function LongtailPipelineClient({
   );
   const [intentUnverified, setIntentUnverified] = useState(false);
   const [showFiltered, setShowFiltered] = useState(false);
+  /** 仅看有量词：候选表与测算表共用的视图筛选（主投清单口径）。 */
+  const [onlyWithVolume, setOnlyWithVolume] = useState(false);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -134,7 +141,11 @@ export function LongtailPipelineClient({
   const outRows = outcomes
     ? allRows.filter((c) => outcomeOf(c.keyword) !== "pass")
     : [];
-  const displayPass = modelFirstStable(passRows);
+  const displayPass = modelFirstStable(
+    onlyWithVolume
+      ? passRows.filter((c) => hasVolume(c.searchVolume))
+      : passRows
+  );
   const displayOut = modelFirstStable(outRows);
 
   /** 已勾选词（含人工保留的被过滤词），按候选原序。 */
@@ -144,6 +155,40 @@ export function LongtailPipelineClient({
       .filter((c) => selected.has(c.keyword.toLowerCase()))
       .map((c) => c.keyword);
   }, [candidates, selected]);
+
+  /**
+   * 导入守门（2026-11-08）：只有"有量且购买意图"的词进投放；量以测算结果为准
+   * （已测算时）、否则用扩词量；意图取筛选步的意图标签。被拦的词带原因返回，
+   * 导入按钮只导 eligible 的词，不得悄悄建进去。
+   */
+  const importSplit = useMemo((): {
+    eligible: string[];
+    blocked: ImportBlock[];
+  } => {
+    if (!candidates) return { eligible: [], blocked: [] };
+    const candByKey = new Map(
+      candidates.map((c) => [
+        c.keyword.toLowerCase(),
+        { searchVolume: c.searchVolume, intent: c.intent },
+      ])
+    );
+    const measureByKey = new Map(
+      (measure?.rows ?? []).map((r) => [
+        r.keyword.toLowerCase(),
+        { searchVolume: r.searchVolume },
+      ])
+    );
+    return splitImportWords(pickedWords, candByKey, measureByKey);
+  }, [candidates, pickedWords, measure]);
+
+  /** 测算表展示序：有量词在前按 CPC 升序，无量词沉底（主投清单口径）。 */
+  const displayMeasureRows = useMemo(() => {
+    if (!measure) return [];
+    const sorted = sortMeasureDisplay(measure.rows);
+    return onlyWithVolume
+      ? sorted.filter((r) => hasVolume(r.searchVolume))
+      : sorted;
+  }, [measure, onlyWithVolume]);
 
   async function doExpand() {
     const s = seed.trim();
@@ -273,12 +318,15 @@ export function LongtailPipelineClient({
     });
   }
 
-  /** 全选通过词：疑似已购用户词排除（这类词勾了也是给已购用户烧钱）。 */
+  /**
+   * 全选通过词：只选主投资格的词（有量且购买意图）；
+   * 疑似已购用户词排除（这类词勾了也是给已购用户烧钱）。
+   */
   function selectAllPass() {
     setSelected(
       new Set(
         passRows
-          .filter((c) => !isOwnedUserRisk(c.keyword))
+          .filter((c) => isMainListEligible(c) && !isOwnedUserRisk(c.keyword))
           .map((c) => c.keyword.toLowerCase())
       )
     );
@@ -583,6 +631,15 @@ export function LongtailPipelineClient({
                     : t.showFiltered.replace("{k}", String(outCount))}
                 </button>
               )}
+              <label className="flex items-center gap-1.5 text-xs text-ink/70">
+                <input
+                  type="checkbox"
+                  checked={onlyWithVolume}
+                  onChange={(e) => setOnlyWithVolume(e.target.checked)}
+                  className="h-4 w-4 accent-[#2563eb]"
+                />
+                {t.onlyWithVolume}
+              </label>
             </div>
           )}
           {!outcomes && (
@@ -640,18 +697,33 @@ export function LongtailPipelineClient({
             >
               {measuring ? t.measuring : `📐 ${t.measureBtn}`}
             </button>
-            {/* ⑤ 导入投放（复用既有 launch 导入路径） */}
+            {/* ⑤ 导入投放（复用既有 launch 导入路径）：只导有量且购买意图的词 */}
             <button
               type="button"
-              onClick={() => onImportToLaunch(pickedWords)}
-              disabled={pickedWords.length === 0}
+              onClick={() => onImportToLaunch(importSplit.eligible)}
+              disabled={importSplit.eligible.length === 0}
               className="rounded-lg border border-signal px-4 py-2 text-sm font-semibold text-signal hover:bg-signal/5 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {t.importBtn.replace("{n}", String(pickedWords.length))}
+              {t.importBtn.replace("{n}", String(importSplit.eligible.length))}
             </button>
           </div>
           {pickedWords.length === 0 && (
             <p className="mt-1.5 text-xs text-ink/45">{t.measureNeedPick}</p>
+          )}
+          {pickedWords.length > 0 && importSplit.blocked.length > 0 && (
+            <p className="mt-1.5 text-xs leading-relaxed text-amber-700">
+              ⚠️{" "}
+              {t.importExcludedNote
+                .replace("{n}", String(importSplit.blocked.length))
+                .replace("{m}", String(importSplit.eligible.length))}{" "}
+              {t.importBlockedWords.replace(
+                "{words}",
+                importSplit.blocked.map((b) => b.keyword).join("、")
+              )}
+            </p>
+          )}
+          {pickedWords.length > 0 && importSplit.eligible.length === 0 && (
+            <p className="mt-1.5 text-xs text-red-700">{t.importNoneEligible}</p>
           )}
           {measureError && (
             <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -668,19 +740,32 @@ export function LongtailPipelineClient({
               <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
                 ⚠️ {t.estimateNote}
               </p>
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-ink/60">
+                <span>{t.measureSortNote}</span>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={onlyWithVolume}
+                    onChange={(e) => setOnlyWithVolume(e.target.checked)}
+                    className="h-4 w-4 accent-[#2563eb]"
+                  />
+                  {t.onlyWithVolume}
+                </label>
+              </div>
               <div className="mt-2 overflow-x-auto">
                 <table className="w-full min-w-[560px] text-left text-sm">
                   <thead>
                     <tr className="border-b border-ink/10 text-xs text-ink/50">
                       <th className="py-1.5 pr-2 font-medium">{d.thKeyword}</th>
                       <th className="py-1.5 pr-2 font-medium">{d.thVolume}</th>
+                      <th className="py-1.5 pr-2 font-medium">{t.thVerdict}</th>
                       <th className="py-1.5 pr-2 font-medium">{t.thCpc}</th>
                       <th className="py-1.5 pr-2 font-medium">{t.thBidRange}</th>
                       <th className="py-1.5 font-medium">{t.thCompIndex}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {measure.rows.map((r) => (
+                    {displayMeasureRows.map((r) => (
                       <tr
                         key={r.keyword.toLowerCase()}
                         className="border-b border-ink/5"
@@ -688,6 +773,17 @@ export function LongtailPipelineClient({
                         <td className="py-1.5 pr-2 text-ink/85">{r.keyword}</td>
                         <td className="py-1.5 pr-2 text-ink/70">
                           {fmtNum(r.searchVolume)}
+                        </td>
+                        <td className="py-1.5 pr-2">
+                          {hasVolume(r.searchVolume) ? (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                              {t.hasVolumeLabel}
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                              {t.noVolumeLabel}
+                            </span>
+                          )}
                         </td>
                         <td className="py-1.5 pr-2 text-ink/70">
                           {fmtMoney(r.cpc)}
