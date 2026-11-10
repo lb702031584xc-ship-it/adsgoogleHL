@@ -4,7 +4,7 @@
  * 用户在 55海淘复制一整段商家列表纯文本，粘贴进来后解析 + 筛查，
  * 出短名单 / 备选·待核实 / 排除三档。纯前端，不调任何 API、不碰 Google Ads。
  *
- * 已定口径（2026-11-10 三组实筛结论 + 用户确认，照搬不自创）：
+ * 已定口径（2026-11-10 深核复核终判 + 用户确认，照搬不自创）：
  * - 返利%是给消费者的返现，不是联盟佣金：筛查里绝不拿返利%当佣金率
  *   算单均佣金；佣金只按已知品牌库里可信的佣金率 × 客单价算，没有
  *   依据的一律写"佣金未核实"，不编数字。
@@ -58,10 +58,12 @@ export interface ParseResult {
   skippedLines: string[];
 }
 
-/** 2026-11-10 三组实筛写进来的已知品牌库记录。 */
+/** 2026-11-10 深核复核终判写进来的已知品牌库记录。 */
 export interface KnownBrandEntry {
   key: string;
   displayName: string;
+  /** 粘贴文本里的别名（如 "Fenty Beauty + Fenty Skin"），归属用 */
+  aliases?: readonly string[];
   /** 美国知名度 + 一句话证据 */
   fame: FameLevel;
   fameEvidence: string;
@@ -163,6 +165,13 @@ export function brandSeedKeyword(displayName: string): string {
 /**
  * 2026-11-08 DataForSEO 实测过的真数，只作示例行与测试用。
  * 只属于 Ogee / Dooney 这两家，绝不套用到别的品牌上。
+ *
+ * 2026-11-10 深核品牌词实测（美国/英语，DataForSEO，种子词锚点），仅供参考：
+ * eileen fisher 135,000/$1.21；skims 1,500,000/$0.21；cecred 110,000/$0.34；
+ * rove dash cam 4,400/$1.38；bambu lab 550,000/$0.47；katie loxton 3,600/$0.61；
+ * baobab collection 1,600/$1.18；private internet access 60,500/$1.57；jlab 40,500/$0.78。
+ * 这些数只写在对应品牌记录的 note 里，不进本数组、不套用到别的品牌上；
+ * 页面实测仍以用户点击“拉取品牌词流量”走 adMeasureAction 为准。
  */
 export const KNOWN_BRAND_KEYWORD_EXAMPLES: ReadonlyArray<{
   brandKey: string;
@@ -249,7 +258,7 @@ function parseCountToken(token: string): number | null {
 }
 
 // ---------------------------------------------------------------------------
-// 已知品牌库（2026-11-10 三组实筛结论）
+// 已知品牌库（2026-11-10 深核复核终判；初筛改判 7 家）
 // ---------------------------------------------------------------------------
 
 function entry(e: Omit<KnownBrandEntry, "key">): KnownBrandEntry {
@@ -263,16 +272,16 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     fameEvidence: "美国可持续时尚小众品牌，5,726人获得返利，知名度中强",
     priceMinUsd: 178,
     priceMaxUsd: 228,
-    priceLabel: "$178–$228",
-    networkStatus: "usable",
-    networkLabel: "Rakuten（可用）",
-    networkEvidence: "Rakuten 返现页 + 道德时尚品牌列名（间接证据，MID/条款待后台核实）",
+    priceLabel: "$178–$228（正价）",
+    networkStatus: "unknown",
+    networkLabel: "Rakuten（待核实 MID/费率/条款）",
+    networkEvidence: "间接证据（Rakuten 返现页 + 道德时尚品牌列名）；MID、费率、品牌词条款公开页均未证实，须进 Rakuten 后台核实",
     commissionRatePct: 4,
-    commissionNote: "第三方口径，待 Rakuten 后台核实",
+    commissionNote: "第三方口径 4%，待 Rakuten 后台核实；折扣价 $111.75×4%=$4.47 跌破 $5 线",
     giftFit: "general",
     giftReason: "偏正装，节日送礼适配一般",
-    verdictHint: "shortlist",
-    note: "唯一客单价与预估佣金双过线；需先在 Rakuten 后台核实真实佣金率与品牌词条款",
+    verdictHint: "backup",
+    note: "降级备选：正价 $178×4%=$7.12、$228×4%=$9.12 过线，但 Rakuten MID/费率/品牌词条款公开页均未证实；折扣价 $111.75×4%=$4.47 跌破 $5 线；品牌词实测 eileen fisher 135,000/$1.21，有量，盈亏平衡 $3.56–$4.56，CPC 未超",
   }),
   entry({
     displayName: "ROVE Dash Cam",
@@ -282,14 +291,14 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     priceMaxUsd: 149.99,
     priceLabel: "$129.99–$149.99（只推 $130+ 档）",
     networkStatus: "unknown",
-    networkLabel: "未核实（官网自营 5%）",
-    networkEvidence: "官网自营计划 5%，55海淘上游链路未核实",
+    networkLabel: "未核实（官网自营 Tapfiliate 5% 已确认）",
+    networkEvidence: "官网自营 Tapfiliate 5% 已确认；55海淘上游链路与 SEM/品牌词条款仍待核实",
     commissionRatePct: 5,
-    commissionNote: "官网自营 5% 口径",
+    commissionNote: "官网自营 Tapfiliate 5% 已确认",
     giftFit: "general",
     giftReason: "行车记录仪是安全刚需，送礼属性一般",
     verdictHint: "shortlist",
-    note: "条件性短名单：价格/佣金/知名度三项成立，须先实测 55海淘跳转链确认上级网络 + 品牌词/直链条款；$90 档单均 $4.52 不过线，只推 $130+ 档",
+    note: "条件性短名单：单机现价 $74.99–$99.99，5% 仅 $3.75–$5.00 不过线；只推 Dual $129.99+（$6.50/$7.50）；须先实测 55海淘跳转链确认上级网络 + SEM/品牌词条款；品牌词实测 rove dash cam 4,400/$1.38，有量，盈亏平衡 $3.25–$3.75，CPC 未超",
   }),
   entry({
     displayName: "Leatherman",
@@ -349,40 +358,40 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     priceMinUsd: 58,
     priceMaxUsd: 80,
     priceLabel: "$58–$80",
-    networkStatus: "unknown",
-    networkLabel: "未核实（Impact / Rakuten 未分清）",
-    networkEvidence: "Impact 与 Rakuten 双轨并存；11-04 Awin 跳转异常无法证实也无法证伪",
-    commissionRatePct: null,
-    commissionNote: "5%–10% 区间，顶格 10% 才过 $5 线",
+    networkStatus: "excluded",
+    networkLabel: "Impact（排除）",
+    networkEvidence: "主网络 Impact：招聘启事明确管理 Impact，未提 Rakuten",
+    commissionRatePct: 5,
+    commissionNote: "常规 5%：$58 款仅 $2.90、$80 款 $4.00；顶格 10% 未证实为常规口径",
     giftFit: "fit",
     giftReason: "节日送礼适配高，advent calendar 在售",
-    verdictHint: "backup",
-    note: "卡点：上级在 Impact（排除）与 Rakuten（可用）之间未分清，必须实测 55海淘实时跳转链；若是 Rakuten 可升短名单，若是 Impact/Awin 则改排除",
+    verdictHint: "excluded",
+    note: "改判排除：主网络 Impact（招聘启事明确管理 Impact，未提 Rakuten），硬排除；常规 5% 下 $58 款仅 $2.90、$80 款 $4.00；品牌词实测 skims 1,500,000/$0.21，量极大但网络一票否决，流量救不了",
   }),
   entry({
     displayName: "Cecred",
     fame: "strong",
     fameEvidence: "Beyoncé 品牌，Ulta 1400+ 门店在售",
-    priceMinUsd: 30,
+    priceMinUsd: 32,
     priceMaxUsd: 98,
-    priceLabel: "$30–$98",
+    priceLabel: "$32–$98（洗发 $32，发膜 $42，Edge Drops XL $98）",
     networkStatus: "unknown",
-    networkLabel: "未核实（官网自营 Pro 计划）",
-    networkEvidence: "官网为品牌自营 Pro Affiliate 计划，55海淘上级未核实",
+    networkLabel: "未核实（官网自营 Pro 计划，须执照）",
+    networkEvidence: "Pro 计划 15% 属实，但须持美国美容执照；非持证拿不到链（走 Shopify Collabs）",
     commissionRatePct: 15,
-    commissionNote: "官网实证 15%",
+    commissionNote: "官网实证 15%；洗发实价 $32（不是 $38），$32×15%=$4.80",
     giftFit: "general",
     giftReason: "洗护套装可作礼品，但偏日常消耗",
-    verdictHint: "backup",
-    note: "卡点：Pro 计划限持证发型师、55海淘上级未核实，先核准入与跳转链再定",
+    verdictHint: "excluded",
+    note: "改判排除：Pro 计划 15% 属实但须持美国美容执照，非持证拿不到链；洗发实价 $32（不是 $38），$32×15%=$4.80 不过线；品牌词实测 cecred 110,000/$0.34",
   }),
   entry({
     displayName: "Katie Loxton US",
     fame: "medium",
     fameEvidence: "轻奢礼品品牌，1.4 万人获得返利，时尚组最高",
     priceMinUsd: 59,
-    priceMaxUsd: 160,
-    priceLabel: "$59–$160（只推 $129+ 款）",
+    priceMaxUsd: 180,
+    priceLabel: "$59–$180（只推 $129+ 款，4% 档）",
     networkStatus: "usable",
     networkLabel: "Rakuten（可用）",
     networkEvidence: "官网隐私页明文列 Rakuten Advertising；MID/费率/条款未核实",
@@ -391,7 +400,7 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     giftFit: "fit",
     giftReason: "包袋/礼品定位，送礼适配最好",
     verdictHint: "backup",
-    note: "卡点：经济账只在 $129+ 高价款成立，先核佣金率",
+    note: "卡点：只推 $129+ 高价款且 4% 档成立才过线；Weekender $135–$180（原 $160 已纠正）；佣金率 1.9% vs 4% 未解决；品牌词实测 katie loxton 3,600/$0.61，有量但偏薄",
   }),
   entry({
     displayName: "Bambu Lab",
@@ -401,14 +410,14 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     priceMaxUsd: 549,
     priceLabel: "$399–$549（主力 P1S / P1S Combo）",
     networkStatus: "unknown",
-    networkLabel: "未核实（多网并存）",
-    networkEvidence: "ShareASale 记录已关闭不可采信；另有 Awin 商家页、Siteplug 1% 记录；55海淘本链未核实",
+    networkLabel: "未核实（GoAffPro 直签待核）",
+    networkEvidence: "ShareASale 3% 口径作废（该网络 2025-10-06 已关闭并入 Awin）；Awin 计划已证实存在（商家页 46345），Awin 路径排除；剩余 GoAffPro 直签费率未核实、Siteplug 1%",
     commissionRatePct: null,
-    commissionNote: "1% 与 3% 冲突，未核实",
+    commissionNote: "GoAffPro 直签费率未核实；Siteplug 1%；ShareASale 3% 已作废",
     giftFit: "fit",
     giftReason: "黑五适配度高（黑五至 12 月 1 日，A1 mini $199、P2S $449）",
     verdictHint: "backup",
-    note: "卡点：佣金率与网络未核实；若实测链是 Awin 改判排除，若是 1% 则主力款不过 $5 线",
+    note: "卡点：ShareASale 3% 作废；Awin 计划已证实存在（商家页 46345），Awin 路径排除；剩余 GoAffPro 直签费率未核实、Siteplug 1%；品牌词实测 bambu lab 550,000/$0.47",
   }),
   entry({
     displayName: "JLab",
@@ -417,15 +426,15 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     priceMinUsd: 30,
     priceMaxUsd: 69.99,
     priceLabel: "$30–$69.99（只做 $69.99+）",
-    networkStatus: "unknown",
-    networkLabel: "未核实",
-    networkEvidence: "公开搜索未见 Rakuten / Partnerize / Awin / Impact / CJ 的美国计划；55海淘上游未核实",
+    networkStatus: "excluded",
+    networkLabel: "Impact（排除）",
+    networkEvidence: "官网 jlab.com 原文：媒体联盟走 Impact；硬排除",
     commissionRatePct: null,
     commissionNote: "佣金率来源冲突 6 倍以上，无法采信任一",
     giftFit: "fit",
     giftReason: "耳机是典型节日礼物",
-    verdictHint: "backup",
-    note: "卡点：客单价结构最弱、佣金率未核实；如要推进只做 JBuds Lux（$69.99）及以上型号，并先核实真实佣金率与 SEM 条款",
+    verdictHint: "excluded",
+    note: "改判排除：官网 jlab.com 原文媒体联盟走 Impact，硬排除；品牌词实测 jlab 40,500/$0.78，但网络一票否决",
   }),
   entry({
     displayName: "Baobab Collection USA",
@@ -434,49 +443,51 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     priceMinUsd: 145,
     priceMaxUsd: 385,
     priceLabel: "$145–$385",
-    networkStatus: "excluded",
-    networkLabel: "FlexOffers（不可用）",
-    networkEvidence: "FlexOffers 8%（美国）/ Skimlinks 10%；用户 FlexOffers 账号 #1564537 已拒",
+    networkStatus: "unknown",
+    networkLabel: "Skimlinks（待核）",
+    networkEvidence: "Skimlinks 10%（1 天 cookie，净佣约 $10.88 待核实）；FlexOffers 8%=$11.60，但用户账号 #1564537 已拒；付费搜索许可未核实",
     commissionRatePct: 8,
-    commissionNote: "FlexOffers 8% 口径",
+    commissionNote: "FlexOffers 8% 口径（$145×8%=$11.60）；Skimlinks 毛佣 10% 按 75% 分成净佣约 $10.88 待核实",
     giftFit: "fit",
     giftReason: "奢华蜡烛送礼季最强",
     verdictHint: "backup",
-    note: "卡点：唯一卡在网络不在可用名单（FlexOffers 已拒，Skimlinks 待核接入）；若 Skimlinks 不可用则本组全灭",
+    note: "有条件备选：Skimlinks 通道存在但 1 天 cookie、净佣约 $10.88 待核实、付费搜索许可未核实；FlexOffers 8%=$11.60 但账号已拒；品牌词实测 baobab collection 1,600/$1.18",
   }),
   entry({
     displayName: "Private Internet Access",
+    aliases: ["Private Internet Access VPN"],
     fame: "strong",
     fameEvidence: "美国知名 VPN 品牌",
     priceMinUsd: 56.94,
     priceMaxUsd: 56.94,
     priceLabel: "$56.94（2 年 + 4 月一次付清）",
     networkStatus: "unknown",
-    networkLabel: "未核实（Kape 自营）",
-    networkEvidence: "Kape 自营 TUNE（HasOffers），另有 FlexOffers；一处称 Impact，来源冲突未核实",
-    commissionRatePct: null,
-    commissionNote: "80% 只限月付单，不是整单；2 年单标准 33%、续费 24% 的说法未核实",
+    networkLabel: "Kape 自营（33% 首单已确认）",
+    networkEvidence: "Kape 自营 TUNE（HasOffers）；33% 首单已确认；另有 FlexOffers；一处称 Impact，来源冲突未核实",
+    commissionRatePct: 33,
+    commissionNote: "Kape 自营 33% 首单已确认（$56.94×33%=$18.79）；续费是否分成说法冲突未核实；PPC/品牌词条款未核实",
     giftFit: "general",
     giftReason: "VPN 非实物礼品，但黑五正值 VPN 需求峰",
     verdictHint: "backup",
-    note: "卡点：网络不在可用名单内，Kape 直签通道待核实；80% 噱头已拆穿，只限月付单",
+    note: "Kape 自营 33% 首单已确认（$56.94×33%=$18.79，盈亏平衡 $9.40）；续费是否分成冲突未核实，PPC/品牌词条款未核实；品牌词实测 private internet access 60,500/$1.57",
   }),
   entry({
     displayName: "Fenty Beauty",
+    aliases: ["Fenty Beauty + Fenty Skin"],
     fame: "strong",
     fameEvidence: "Rihanna 品牌，2.2 万人获得返利，知名度/需求最强",
     priceMinUsd: 40,
-    priceMaxUsd: 48,
-    priceLabel: "$40–$48（单件）",
+    priceMaxUsd: 160,
+    priceLabel: "$40–$48（单件粉底）；$160 Lip Vault 节日限定套装",
     networkStatus: "unknown",
     networkLabel: "未核实（Rakuten / Impact 未分清）",
-    networkEvidence: "Rakuten 有注册页证据，Impact 亦多源报",
+    networkEvidence: "Rakuten 有注册页证据，Impact 亦多源报；前置：走 Rakuten 路线并核实项目开放及套装计佣",
     commissionRatePct: null,
-    commissionNote: "单件佣金低，过线靠未核实的篮子",
+    commissionNote: "Rakuten 4%–8% 口径待核实；$160 Lip Vault 套装按 4%–8% 算 $6.40–$12.80；单件粉底 $40×4% 仅 $1.60 仍不过线",
     giftFit: "general",
     giftReason: "美妆节日礼盒有需求，但主力单件偏自用",
     verdictHint: "backup",
-    note: "卡点：单件佣金低、过线靠未核实的篮子，且网络未分清",
+    note: "改判备选：$160 Lip Vault 节日限定套装在 Rakuten 4%–8% 下 $6.40–$12.80，单件即过线；前置：走 Rakuten 路线并核实项目开放及套装计佣；单件粉底 $40 仍不过线",
   }),
   entry({
     displayName: "Trish McEvoy",
@@ -531,6 +542,7 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
   }),
   entry({
     displayName: "Currentbody US",
+    aliases: ["Currentbody US & Canada"],
     fame: "medium",
     fameEvidence: "美容仪品牌，美国知名度过关，7,192 人获得返利",
     priceMinUsd: 469.99,
@@ -544,7 +556,7 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     giftFit: "fit",
     giftReason: "美容仪是节日大件礼品",
     verdictHint: "excluded",
-    note: "上级是排除名单 Awin，且品牌词 PPC 明文禁止",
+    note: "上级是排除名单 Awin；PPC 三重封死：禁品牌词竞价、禁广告文案/展示 URL 用域名、PPC 直链不付全佣",
   }),
   entry({
     displayName: "Thymes",
@@ -595,10 +607,11 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     giftFit: "general",
     giftReason: "电单车是大件，节日礼品属性弱",
     verdictHint: "excluded",
-    note: "上级联盟就是 Awin；条款明文：无书面同意不得用品牌词做付费搜索、直接链接不得拿全额佣金；另有部分型号售罄",
+    note: "上级联盟就是 Awin；Awin 条款原文已核实：无书面同意不得用品牌词做付费搜索、直接链接不得拿全额佣金；另有部分型号售罄",
   }),
   entry({
     displayName: "Nixon",
+    aliases: ["Nixon (US & Canada)"],
     fame: "medium",
     fameEvidence: "1997/1998 年创立于加州 Encinitas，手表小众品牌，nixon.com 访客 51.4% 来自美国",
     priceMinUsd: 150,
@@ -612,7 +625,7 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     giftFit: "fit",
     giftReason: "手表是典型节日礼物",
     verdictHint: "excluded",
-    note: "价格、佣金、美国小众知名度均过关，但上级联盟是 Awin，一票否决；返利仅 25 人，需求佐证最弱",
+    note: "价格、佣金、美国小众知名度均过关，但上级联盟是 Awin，一票否决；Awin 条款原文已核实（项目 ID 24041）；返利仅 25 人，需求佐证最弱",
   }),
   entry({
     displayName: "Michael Kors Outlet US",
@@ -655,15 +668,15 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     priceMinUsd: 119.99,
     priceMaxUsd: 1999.99,
     priceLabel: "$119.99–$1,999.99（主力 Scuba S1 约 $500–$550）",
-    networkStatus: "excluded",
-    networkLabel: "Impact（排除）",
-    networkEvidence: "FMTC 2026-10-12 最新记录 #58154 为 Impact；旧 ShareASale 已过期",
+    networkStatus: "unknown",
+    networkLabel: "Rakuten #53990（待核费率）",
+    networkEvidence: "新增 Rakuten Advertising #53990（FMTC 2025-12-22）；费率未核实；旧 Impact 记录 #58154 仍在，通道待确认",
     commissionRatePct: null,
-    commissionNote: "Lasso 称最高 7.5%，未核实",
+    commissionNote: "Lasso 称最高 7.5%，未核实；Rakuten 费率待核",
     giftFit: "notFit",
-    giftReason: "11 月泳池淡季；Seagull Pro 2025-03-20 CPSC 召回 32,660 台（充电起火风险），不能主推该型号",
-    verdictHint: "excluded",
-    note: "最新记录走 Impact（排除网）；11 月泳池淡季、55海淘仅 39 人佐证弱；Seagull Pro 有召回",
+    giftReason: "11 月泳池淡季不适配；召回仅限 Seagull Pro ZT6001（Scuba S1 从未召回且是替换机型）；2027 年 2–3 月复评",
+    verdictHint: "backup",
+    note: "改判备选（暂缓）：新增 Rakuten #53990 通道，费率待核；11 月淡季不适配，2027 年 2–3 月复评；召回仅限 Seagull Pro ZT6001，Scuba S1 从未召回",
   }),
   entry({
     displayName: "MiniTool",
@@ -672,15 +685,15 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
     priceMinUsd: 59,
     priceMaxUsd: 159,
     priceLabel: "$59–$159/年（Pro $59、Platinum $109、Ultimate $159 终身）",
-    networkStatus: "excluded",
-    networkLabel: "CJ + Awin（排除）",
-    networkEvidence: "官网 affiliate 页原文：available on CJ and Awin networks",
-    commissionRatePct: null,
-    commissionNote: "第三方称 18%–36%，官方称最高 70%；按 $96.30 第三方 AOV 算曾达 $19.26–$28.89，但网络双排除",
+    networkStatus: "unknown",
+    networkLabel: "LinkConnector cid 6999（待核 live）",
+    networkEvidence: "新增第三条通道 LinkConnector cid 6999；CJ + Awin 仍排除；下一步核 LinkConnector 项目是否 live",
+    commissionRatePct: 40,
+    commissionNote: "LinkConnector 订阅品 40% 起；AOV $96.30，单均 $23.60–$38.52；CJ + Awin 仍排除",
     giftFit: "notFit",
-    giftReason: "软件工具非节日礼品",
-    verdictHint: "excluded",
-    note: "经济学全组最强，但网络双双在排除名单，FlexOffers 另有 listing 也因用户 FlexOffers 已拒而不可用",
+    giftReason: "软件工具非节日礼品，需求驱动，11 月送礼不适配",
+    verdictHint: "backup",
+    note: "改判备选：新增 LinkConnector cid 6999 通道（订阅品 40% 起，单均 $23.60–$38.52），CJ + Awin 仍排除；下一步核 LinkConnector 项目是否 live；11 月送礼不适配",
   }),
   entry({
     displayName: "Avast",
@@ -923,7 +936,13 @@ export const KNOWN_BRANDS: readonly KnownBrandEntry[] = [
   }),
 ];
 
-const KNOWN_BY_KEY = new Map(KNOWN_BRANDS.map((b) => [b.key, b]));
+const KNOWN_BY_KEY = new Map<string, KnownBrandEntry>();
+for (const b of KNOWN_BRANDS) {
+  KNOWN_BY_KEY.set(b.key, b);
+  for (const alias of b.aliases ?? []) {
+    KNOWN_BY_KEY.set(normalizeBrandName(alias), b);
+  }
+}
 
 const NON_US_REGIONS: readonly RegionCode[] = ["UK", "DE", "CA", "APAC", "HK"];
 

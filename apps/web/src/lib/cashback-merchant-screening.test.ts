@@ -114,26 +114,26 @@ describe("demandTierFor（人数分档）", () => {
 });
 
 describe("screenCashbackText（筛查）", () => {
-  it("6 家示例跑通三档：短名单 2、备选 1、排除 3", () => {
+  it("6 家示例跑通三档：短名单 1、备选 1、排除 4（深核后 Eileen Fisher 降级、SKIMS 排除）", () => {
     const r = screenCashbackText(SAMPLE_6);
     expect(r.parsedCount).toBe(6);
-    expect(r.counts).toEqual({ shortlist: 2, backup: 1, excluded: 3 });
+    expect(r.counts).toEqual({ shortlist: 1, backup: 1, excluded: 4 });
     expect(r.merchants.filter((m) => m.verdict === "shortlist").map((m) => m.name)).toEqual([
-      "Eileen Fisher",
       "ROVE Dash Cam",
     ]);
   });
 
-  it("短名单 Eileen Fisher：四项齐全，佣金 $178×4%≈$7.12，盈亏平衡 $3.56", () => {
+  it("备选 Eileen Fisher（深核降级）：佣金仍 $178×4%≈$7.12，盈亏平衡 $3.56，但折扣价 $111.75×4%=$4.47 跌破 $5 线", () => {
     const r = screenCashbackText(SAMPLE_6);
     const m = r.merchants.find((x) => x.name === "Eileen Fisher")!;
-    expect(m.verdict).toBe("shortlist");
+    expect(m.verdict).toBe("backup");
     expect(m.estimatedCommissionUsd).toBe(7.12);
     expect(m.breakevenCpcUsd).toBe(3.56);
     expect(m.fame).toBe("medium");
     expect(m.networkLabel).toContain("Rakuten");
     expect(m.giftFit).toBe("general");
     expect(m.commissionLabel).toContain("4%");
+    expect(m.reason).toContain("$4.47");
   });
 
   it("短名单 ROVE：只推 $130+ 档，$129.99×5%≈$6.50，送礼一般", () => {
@@ -145,11 +145,11 @@ describe("screenCashbackText（筛查）", () => {
     expect(m.giftReason).toContain("安全刚需");
   });
 
-  it("网络硬排除：Awin（Tenways）、Impact（Aiper）、CJ（Michael Kors Outlet US）", () => {
+  it("网络硬排除：Awin（Tenways）、Impact（JLab）、CJ（Michael Kors Outlet US）", () => {
     const r = screenCashbackText(
       [
         "Tenways (US) / 最高4%返利 / 236人获得返利",
-        "Aiper / 6.4%返利 / 39人获得返利",
+        "JLab / 最高8%返利 / 154人获得返利",
         "Michael Kors Outlet US / 最高5%返利 / 1362人获得返利",
       ].join("\n")
     );
@@ -157,6 +157,17 @@ describe("screenCashbackText（筛查）", () => {
     expect(r.merchants[0].networkLabel).toContain("Awin");
     expect(r.merchants[1].networkLabel).toContain("Impact");
     expect(r.merchants[2].networkLabel).toContain("CJ");
+  });
+
+  it("Aiper 改判备选（暂缓）：新增 Rakuten #53990，费率待核，春季复评", () => {
+    const r = screenCashbackText("Aiper / 6.4%返利 / 39人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.networkLabel).toContain("Rakuten");
+    expect(m.networkLabel).toContain("53990");
+    expect(m.giftFit).toBe("notFit");
+    expect(m.giftReason).toContain("淡季");
+    expect(m.reason).toContain("复评");
   });
 
   it("PepperJam 单独标风险不当可用：Leatherman 排除", () => {
@@ -299,21 +310,21 @@ describe("applyKeywordTraffic（流量归属 + 升降档）", () => {
   it("短名单 + 无量 → 降为备选，理由写清不直接杀品牌", () => {
     const screened = screenCashbackText(SAMPLE_6);
     const { result } = applyKeywordTraffic(screened, [
-      { keyword: "eileen fisher", searchVolume: 0, cpc: null, competition: null, lowTopBid: null, highTopBid: null },
+      { keyword: "rove dash cam", searchVolume: 0, cpc: null, competition: null, lowTopBid: null, highTopBid: null },
     ]);
-    const m = result.merchants.find((x) => x.name === "Eileen Fisher")!;
+    const m = result.merchants.find((x) => x.name === "ROVE Dash Cam")!;
     expect(m.verdict).toBe("backup");
     expect(m.keywordVerdict).toBe("no-volume");
     expect(m.reason).toContain("不直接杀品牌");
-    expect(result.counts.shortlist).toBe(1);
+    expect(result.counts.shortlist).toBe(0);
   });
 
-  it("短名单 + 有量且 CPC ≤ 盈亏平衡 → 留在短名单", () => {
+  it("短名单 + 有量且 CPC ≤ 盈亏平衡 → 留在短名单（ROVE 实测 4,400/$1.38 ≤ $3.25）", () => {
     const screened = screenCashbackText(SAMPLE_6);
     const { result } = applyKeywordTraffic(screened, [
-      { keyword: "eileen fisher", searchVolume: 5000, cpc: 1.2, competition: "LOW", lowTopBid: 0.8, highTopBid: 1.5 },
+      { keyword: "rove dash cam", searchVolume: 4400, cpc: 1.38, competition: "LOW", lowTopBid: 0.8, highTopBid: 1.5 },
     ]);
-    const m = result.merchants.find((x) => x.name === "Eileen Fisher")!;
+    const m = result.merchants.find((x) => x.name === "ROVE Dash Cam")!;
     expect(m.verdict).toBe("shortlist");
     expect(m.keywordVerdict).toBe("investable");
     expect(m.keywordMeasure?.lowTopBid).toBe(0.8);
@@ -329,12 +340,12 @@ describe("applyKeywordTraffic（流量归属 + 升降档）", () => {
     expect(m.keywordVerdict).toBe("over-breakeven");
   });
 
-  it("佣金未核实的备选品牌：只显示量和 CPC，不判可投/超标", () => {
-    const screened = screenCashbackText(SAMPLE_6);
+  it("佣金未核实的备选品牌：只显示量和 CPC，不判可投/超标（Bambu Lab 实测 550,000/$0.47）", () => {
+    const screened = screenCashbackText("Bambu Lab / 最高1%返利 / 13人获得返利");
     const { result } = applyKeywordTraffic(screened, [
-      { keyword: "skims", searchVolume: 90000, cpc: 0.4, competition: null, lowTopBid: null, highTopBid: null },
+      { keyword: "bambu lab", searchVolume: 550000, cpc: 0.47, competition: null, lowTopBid: null, highTopBid: null },
     ]);
-    const m = result.merchants.find((x) => x.name === "SKIMS")!;
+    const m = result.merchants.find((x) => x.name === "Bambu Lab")!;
     expect(m.verdict).toBe("backup");
     expect(m.keywordVerdict).toBe("unknown");
     expect(m.keywordNote).toContain("佣金未核实");
@@ -348,5 +359,112 @@ describe("applyKeywordTraffic（流量归属 + 升降档）", () => {
     ]);
     expect(appliedCount).toBe(1);
     expect(unmatchedCount).toBe(1);
+  });
+});
+
+describe("深核复核终判（2026-11-10，改判 7 家）", () => {
+  it("SKIMS 改判排除：主网络 Impact，常规 5% 下 $58 款仅 $2.90", () => {
+    const r = screenCashbackText("SKIMS / 最高2%返利 / 2万人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("excluded");
+    expect(m.networkLabel).toContain("Impact");
+    expect(m.estimatedCommissionUsd).toBe(2.9);
+    expect(m.reason).toContain("流量救不了");
+  });
+
+  it("Cecred 改判排除：须美国美容执照，洗发 $32×15%=$4.80 不过线", () => {
+    const r = screenCashbackText("Cecred / 最高3%返利 / 7072人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("excluded");
+    expect(m.estimatedCommissionUsd).toBe(4.8);
+    expect(m.reason).toContain("执照");
+  });
+
+  it("JLab 改判排除：官网证实走 Impact", () => {
+    const r = screenCashbackText("JLab / 最高8%返利 / 154人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("excluded");
+    expect(m.networkLabel).toContain("Impact");
+    expect(m.reason).toContain("jlab 40,500");
+  });
+
+  it("Fenty 改判备选：$160 Lip Vault 套装 4%–8% 下 $6.40–$12.80 单件过线", () => {
+    const r = screenCashbackText("Fenty Beauty + Fenty Skin / 最高4%返利 / 2.2万人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.reason).toContain("Lip Vault");
+    expect(m.reason).toContain("$6.40");
+  });
+
+  it("MiniTool 改判备选：LinkConnector 40% 起，$59×40%=$23.60", () => {
+    const r = screenCashbackText("MiniTool / 最高40%返利 / 420人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.networkLabel).toContain("LinkConnector");
+    expect(m.estimatedCommissionUsd).toBe(23.6);
+    expect(m.breakevenCpcUsd).toBe(11.8);
+    expect(m.reason).toContain("LinkConnector");
+  });
+
+  it("PIA 维持备选：Kape 33% 首单已确认，$56.94×33%=$18.79", () => {
+    const r = screenCashbackText("Private Internet Access VPN / 最高80%返利 / 250人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.estimatedCommissionUsd).toBe(18.79);
+    expect(m.reason).toContain("盈亏平衡 $9.40");
+  });
+
+  it("Baobab 维持备选（有条件）：Skimlinks 净佣约 $10.88 待核，1 天 cookie", () => {
+    const r = screenCashbackText("Baobab Collection USA / 8%返利 / 1534人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.reason).toContain("Skimlinks");
+    expect(m.reason).toContain("$10.88");
+  });
+
+  it("Katie Loxton 维持备选：Weekender 纠正为 $135–$180", () => {
+    const r = screenCashbackText("Katie Loxton US / 3%返利 / 1.4万人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.priceLabel).toContain("$59–$180");
+    expect(m.reason).toContain("$135–$180");
+  });
+
+  it("Bambu Lab 维持备选：ShareASale 3% 作废，GoAffPro 直签待核", () => {
+    const r = screenCashbackText("Bambu Lab / 最高1%返利 / 13人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.reason).toContain("GoAffPro");
+    expect(m.reason).toContain("550,000");
+  });
+
+  it("Eileen Fisher 实测品牌词：135,000/$1.21 ≤ 盈亏平衡 $3.56，可投，仍留备选", () => {
+    const screened = screenCashbackText(SAMPLE_6);
+    const { result } = applyKeywordTraffic(screened, [
+      { keyword: "eileen fisher", searchVolume: 135000, cpc: 1.21, competition: null, lowTopBid: null, highTopBid: null },
+    ]);
+    const m = result.merchants.find((x) => x.name === "Eileen Fisher")!;
+    expect(m.verdict).toBe("backup");
+    expect(m.keywordVerdict).toBe("investable");
+  });
+
+  it("SKIMS 品牌词量再大也救不了网络一票否决：仍排除，不归属流量", () => {
+    const screened = screenCashbackText(SAMPLE_6);
+    const { result } = applyKeywordTraffic(screened, [
+      { keyword: "skims", searchVolume: 1500000, cpc: 0.21, competition: null, lowTopBid: null, highTopBid: null },
+    ]);
+    const m = result.merchants.find((x) => x.name === "SKIMS")!;
+    expect(m.verdict).toBe("excluded");
+    expect(m.keywordVerdict).toBeNull();
+  });
+
+  it("Currentbody PPC 三重封死、Tenways/Nixon 的 Awin 条款原文已核实，写进理由（粘贴原名 Nixon (US & Canada) 也能命中）", () => {
+    const r = screenCashbackText(
+      "Currentbody US & Canada / 1%返利 / 7192人获得返利\nTenways (US) / 最高4%返利 / 236人获得返利\nNixon (US & Canada) / 最高4%返利 / 25人获得返利"
+    );
+    expect(r.merchants.map((m) => m.verdict)).toEqual(["excluded", "excluded", "excluded"]);
+    expect(r.merchants[0].reason).toContain("三重封死");
+    expect(r.merchants[1].reason).toContain("Awin 条款原文已核实");
+    expect(r.merchants[2].reason).toContain("Awin 条款原文已核实");
   });
 });
