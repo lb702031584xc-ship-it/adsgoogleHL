@@ -7,6 +7,7 @@ import { zh as rateWatchZh, en as rateWatchEn } from "@/i18n/dict/cashback-rate-
 import { zh as termsWatchZh, en as termsWatchEn } from "@/i18n/dict/cashback-terms-watch";
 import { zh as redirectCheckZh, en as redirectCheckEn } from "@/i18n/dict/cashback-redirect-check";
 import { zh as rateCompareZh, en as rateCompareEn } from "@/i18n/dict/cashback-rate-compare";
+import { zh as merchantScreeningZh, en as merchantScreeningEn } from "@/i18n/dict/cashback-merchant-screening";
 import { zh as arbCoachZh, en as arbCoachEn } from "@/i18n/dict/arb-coach";
 import { zh as settingsZh, en as settingsEn } from "@/i18n/dict/settings";
 import { LangSwitcher } from "@/components/lang-switcher";
@@ -94,6 +95,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const termsWatchDict = lang === "en" ? termsWatchEn : termsWatchZh;
   const redirectCheckDict = lang === "en" ? redirectCheckEn : redirectCheckZh;
   const rateCompareDict = lang === "en" ? rateCompareEn : rateCompareZh;
+  const merchantScreeningDict = lang === "en" ? merchantScreeningEn : merchantScreeningZh;
   const arbCoachDict = lang === "en" ? arbCoachEn : arbCoachZh;
   const navSections: NavSection[] = isResearcher
     ? [{ title: "🧪 Research", items: [researchNavItem] }]
@@ -251,6 +253,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
                     items: [
             { href: "/cashback/quickstart", label: ni.cashbackQuickstart },
             { href: "/cashback/offers", label: ni.cashbackOffers, phase: ph.selection },
+            {
+              href: "/cashback/merchant-screening",
+              label: merchantScreeningDict.merchantScreening.title,
+              phase: ph.selection,
+            },
             { href: "/cashback/monitor", label: ni.cashbackMonitor, phase: ph.selection },
             {
               href: "/keywords/starter?tab=research",
