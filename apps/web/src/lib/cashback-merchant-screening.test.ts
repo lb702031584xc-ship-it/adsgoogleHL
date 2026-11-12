@@ -468,3 +468,257 @@ describe("深核复核终判（2026-11-10，改判 7 家）", () => {
     expect(r.merchants[2].reason).toContain("Awin 条款原文已核实");
   });
 });
+
+describe("四类 Top 10 深核终判（2026-11-11，40 家、38 个独立品牌）", () => {
+  const SAMPLE_38 = [
+    "Nike / 5%返利 / 100人获得返利",
+    "Levi's / 5%返利 / 100人获得返利",
+    "Adidas / 5%返利 / 100人获得返利",
+    "Zara / 5%返利 / 100人获得返利",
+    "Gap / 5%返利 / 100人获得返利",
+    "H&M / 5%返利 / 100人获得返利",
+    "Ralph Lauren / 5%返利 / 100人获得返利",
+    "Lululemon / 5%返利 / 100人获得返利",
+    "Uniqlo / 5%返利 / 100人获得返利",
+    "Louis Vuitton / 5%返利 / 100人获得返利",
+    "Skechers / 5%返利 / 100人获得返利",
+    "New Balance / 5%返利 / 100人获得返利",
+    "Jordan / 5%返利 / 100人获得返利",
+    "Puma / 5%返利 / 100人获得返利",
+    "Crocs / 5%返利 / 100人获得返利",
+    "ASICS / 5%返利 / 100人获得返利",
+    "HOKA / 5%返利 / 100人获得返利",
+    "Vans / 5%返利 / 100人获得返利",
+    "Tiffany & Co. / 5%返利 / 100人获得返利",
+    "Cartier / 5%返利 / 100人获得返利",
+    "Pandora / 5%返利 / 100人获得返利",
+    "David Yurman / 5%返利 / 100人获得返利",
+    "Swarovski / 5%返利 / 100人获得返利",
+    "Van Cleef & Arpels / 5%返利 / 100人获得返利",
+    "Harry Winston / 5%返利 / 100人获得返利",
+    "Kendra Scott / 5%返利 / 100人获得返利",
+    "Blue Nile / 5%返利 / 100人获得返利",
+    "Brilliant Earth / 5%返利 / 100人获得返利",
+    "L'Oréal Paris / 5%返利 / 100人获得返利",
+    "Maybelline / 5%返利 / 100人获得返利",
+    "e.l.f. Cosmetics / 5%返利 / 100人获得返利",
+    "Dove / 5%返利 / 100人获得返利",
+    "Clinique / 5%返利 / 100人获得返利",
+    "CeraVe / 5%返利 / 100人获得返利",
+    "The Ordinary / 5%返利 / 100人获得返利",
+    "La Roche-Posay / 5%返利 / 100人获得返利",
+    "Sol de Janeiro / 5%返利 / 100人获得返利",
+    "Rare Beauty / 5%返利 / 100人获得返利",
+  ].join("\n");
+
+  it("38 家全贴计档：短名单 0、备选 8（H&M/Uniqlo/ASICS/HOKA/Pandora/David Yurman/Clinique/Sol de Janeiro）、排除 30", () => {
+    const r = screenCashbackText(SAMPLE_38);
+    expect(r.parsedCount).toBe(38);
+    expect(r.counts).toEqual({ shortlist: 0, backup: 8, excluded: 30 });
+    expect(r.merchants.filter((m) => m.verdict === "backup").map((m) => m.name).sort()).toEqual([
+      "ASICS",
+      "Clinique",
+      "David Yurman",
+      "H&M",
+      "HOKA",
+      "Pandora",
+      "Sol de Janeiro",
+      "Uniqlo",
+    ]);
+  });
+
+  it("Nike、Adidas 服装/鞋类重合只建一条记录，两类同 verdict", () => {
+    const r = screenCashbackText("Nike / 5%返利 / 100人获得返利\nAdidas / 5%返利 / 100人获得返利");
+    expect(r.merchants.map((m) => m.verdict)).toEqual(["excluded", "excluded"]);
+    expect(r.merchants[0].reason).toContain("两类同 verdict");
+    expect(r.merchants[1].reason).toContain("两类同 verdict");
+    expect(r.merchants[0].reason).toContain("品牌词竞价明文禁");
+    expect(r.merchants[1].reason).toContain("自 2016 年起");
+  });
+
+  it("New Balance 推翻线索：上一轮 Rakuten 7% 唯一可用作废，官网现 Impact 起步 2%，$125×2%=$2.50", () => {
+    const r = screenCashbackText("New Balance / 5%返利 / 100人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("excluded");
+    expect(m.networkLabel).toContain("Impact");
+    expect(m.estimatedCommissionUsd).toBe(2.5);
+    expect(m.reason).toContain("已被推翻");
+    expect(m.reason).toContain("MID 39756");
+  });
+
+  it("Uniqlo 备选：只推 PUFFTECH Parka $89.90，$89.90×7%=$6.29，MID 40462", () => {
+    const r = screenCashbackText("Uniqlo / 5%返利 / 100人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.estimatedCommissionUsd).toBe(6.29);
+    expect(m.breakevenCpcUsd).toBe(3.15);
+    expect(m.networkLabel).toContain("40462");
+    expect(m.reason).toContain("$6.29");
+    expect(m.reason).toContain("1,830,000");
+  });
+
+  it("H&M 备选：只推 $179+ 羊毛外套，$179×4%=$7.16，MID 43148，$99 款不进", () => {
+    const r = screenCashbackText("H&M / 5%返利 / 100人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.estimatedCommissionUsd).toBe(7.16);
+    expect(m.breakevenCpcUsd).toBe(3.58);
+    expect(m.networkLabel).toContain("43148");
+    expect(m.reason).toContain("$99 款不进");
+    expect(m.reason).toContain("2,740,000");
+  });
+
+  it("Pandora 备选：6% 档篮子 $110 单均 $6.60，2% 档仅 $2.20", () => {
+    const r = screenCashbackText("Pandora / 5%返利 / 100人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.estimatedCommissionUsd).toBe(6.6);
+    expect(m.breakevenCpcUsd).toBe(3.3);
+    expect(m.reason).toContain("FMTC");
+    expect(m.reason).toContain("$6.60");
+    expect(m.reason).toContain("5,000,000");
+  });
+
+  it("ASICS 备选：Kayano 32 $165×3%=$4.95 差 $0.05 不过线，品牌词明文禁只走型号词；HOKA 备选：Bondi 9 $170×3%=$5.10 刚过线", () => {
+    const r = screenCashbackText("ASICS / 5%返利 / 100人获得返利\nHOKA / 5%返利 / 100人获得返利");
+    const [a, h] = r.merchants;
+    expect(a.verdict).toBe("backup");
+    expect(a.estimatedCommissionUsd).toBe(4.95);
+    expect(a.breakevenCpcUsd).toBe(2.48);
+    expect(a.reason).toContain("差 $0.05");
+    expect(a.reason).toContain("gel-kayano 32");
+    expect(h.verdict).toBe("backup");
+    expect(h.estimatedCommissionUsd).toBe(5.1);
+    expect(h.breakevenCpcUsd).toBe(2.55);
+    expect(h.reason).toContain("$5.10");
+    expect(h.reason).toContain("3–14%");
+  });
+
+  it("佣金不过线组：Ralph Lauren $125×3%=$3.75、Skechers $135×2%=$2.70、e.l.f. $95×5%=$4.75", () => {
+    const r = screenCashbackText(
+      "Ralph Lauren / 5%返利 / 100人获得返利\nSkechers / 5%返利 / 100人获得返利\ne.l.f. Cosmetics / 5%返利 / 100人获得返利"
+    );
+    expect(r.merchants.map((m) => m.verdict)).toEqual(["excluded", "excluded", "excluded"]);
+    expect(r.merchants[0].estimatedCommissionUsd).toBe(3.75);
+    expect(r.merchants[0].reason).toContain("Partnerize 明文禁 PPC");
+    expect(r.merchants[1].estimatedCommissionUsd).toBe(2.7);
+    expect(r.merchants[2].estimatedCommissionUsd).toBe(4.75);
+    expect(r.merchants[2].reason).toContain("暂缓");
+    expect(r.merchants[2].reason).toContain("加拿大");
+    expect(r.merchants[2].reason).toContain("重测待确认");
+  });
+
+  it("Clinique 备选：MID 24775 实证，$99 套装实付价盈亏平衡仅 $1.93 几无余量；Sol de Janeiro 备选：8% 是 ShareASale 费率不得默认 Rakuten", () => {
+    const r = screenCashbackText("Clinique / 5%返利 / 100人获得返利\nSol de Janeiro / 5%返利 / 100人获得返利");
+    const [c, s] = r.merchants;
+    expect(c.verdict).toBe("backup");
+    expect(c.estimatedCommissionUsd).toBe(5.94);
+    expect(c.networkLabel).toContain("24775");
+    expect(c.reason).toContain("$1.93");
+    expect(c.reason).toContain("246,000");
+    expect(s.verdict).toBe("backup");
+    expect(s.networkLabel).toContain("54369");
+    expect(s.reason).toContain("ShareASale");
+    expect(s.reason).toContain("$69+");
+    expect(s.commissionLabel).toBe("未核实");
+  });
+
+  it("David Yurman 备选：四关全过卡在网络+佣金+条款，佣金未核实", () => {
+    const r = screenCashbackText("David Yurman / 5%返利 / 100人获得返利");
+    const m = r.merchants[0];
+    expect(m.verdict).toBe("backup");
+    expect(m.commissionLabel).toBe("未核实");
+    expect(m.networkLabel).toContain("Rakuten 后台核 MID");
+    expect(m.reason).toContain("550,000");
+  });
+
+  it("美国 Crocs 走 Impact 6%（$49.99×6%=$3.00）；Crocs DE 单独贴仍判非美国；同名去重：两者同贴只留一条", () => {
+    const us = screenCashbackText("Crocs / 5%返利 / 100人获得返利");
+    expect(us.merchants[0].verdict).toBe("excluded");
+    expect(us.merchants[0].estimatedCommissionUsd).toBe(3);
+    expect(us.merchants[0].reason).toContain("Impact 6%");
+    const de = screenCashbackText("Crocs DE / 3.2%返利 / 3人获得返利");
+    expect(de.merchants[0].verdict).toBe("excluded");
+    expect(de.merchants[0].reason).toContain("非美国");
+    const both = screenCashbackText("Crocs / 5%返利 / 100人获得返利\nCrocs DE / 3.2%返利 / 3人获得返利");
+    expect(both.parsedCount).toBe(1);
+    expect(both.skippedCount).toBe(1);
+  });
+
+  it("美国 Swarovski 走 Impact；Swarovski HK 单独贴仍判非美国；同名去重：两者同贴只留一条", () => {
+    const us = screenCashbackText("Swarovski / 5%返利 / 100人获得返利");
+    expect(us.merchants[0].verdict).toBe("excluded");
+    expect(us.merchants[0].reason).toContain("Impact");
+    const hk = screenCashbackText("Swarovski HK / 最高3%返利 / 100人获得返利");
+    expect(hk.merchants[0].verdict).toBe("excluded");
+    expect(hk.merchants[0].reason).toContain("非美国");
+    const both = screenCashbackText("Swarovski / 5%返利 / 100人获得返利\nSwarovski HK / 最高3%返利 / 100人获得返利");
+    expect(both.parsedCount).toBe(1);
+    expect(both.skippedCount).toBe(1);
+  });
+
+  it("地区识别只认末尾标记：Sol de Janeiro 里的 de 不是 DE 地区，不判非美国", () => {
+    const r = screenCashbackText("Sol de Janeiro / 5%返利 / 100人获得返利");
+    expect(r.merchants[0].verdict).toBe("backup");
+    expect(r.merchants[0].reason).not.toContain("非美国");
+  });
+
+  it("备选品牌词实测归属：Uniqlo/H&M/Pandora 均可投，仍留备选", () => {
+    const screened = screenCashbackText(
+      "Uniqlo / 5%返利 / 100人获得返利\nH&M / 5%返利 / 100人获得返利\nPandora / 5%返利 / 100人获得返利"
+    );
+    const { result } = applyKeywordTraffic(screened, [
+      { keyword: "uniqlo", searchVolume: 1830000, cpc: 0.22, competition: null, lowTopBid: null, highTopBid: null },
+      { keyword: "h&m", searchVolume: 2740000, cpc: 0.78, competition: null, lowTopBid: null, highTopBid: null },
+      { keyword: "pandora", searchVolume: 5000000, cpc: 0.46, competition: null, lowTopBid: null, highTopBid: null },
+    ]);
+    const by = (n: string) => result.merchants.find((x) => x.name === n)!;
+    expect(by("Uniqlo").keywordVerdict).toBe("investable");
+    expect(by("H&M").keywordVerdict).toBe("investable");
+    expect(by("Pandora").keywordVerdict).toBe("investable");
+    expect(result.merchants.map((m) => m.verdict)).toEqual(["backup", "backup", "backup"]);
+  });
+
+  it("型号词实测归属：Clinique 可投，ASICS/HOKA 型号词可投", () => {
+    const screened = screenCashbackText(
+      "Clinique / 5%返利 / 100人获得返利\nASICS / 5%返利 / 100人获得返利\nHOKA / 5%返利 / 100人获得返利"
+    );
+    const { result } = applyKeywordTraffic(screened, [
+      { keyword: "clinique", searchVolume: 246000, cpc: 1.89, competition: null, lowTopBid: null, highTopBid: null },
+      { keyword: "asics gel-kayano 32", searchVolume: 27100, cpc: 0.69, competition: null, lowTopBid: null, highTopBid: null },
+      { keyword: "hoka bondi 9", searchVolume: 201000, cpc: 1.52, competition: null, lowTopBid: null, highTopBid: null },
+    ]);
+    const by = (n: string) => result.merchants.find((x) => x.name === n)!;
+    expect(by("Clinique").keywordVerdict).toBe("investable");
+    expect(by("ASICS").keywordVerdict).toBe("investable");
+    expect(by("HOKA").keywordVerdict).toBe("investable");
+  });
+
+  it("佣金未核实的备选品牌：只显示量和 CPC，不判可投/超标（Sol de Janeiro、David Yurman）", () => {
+    const screened = screenCashbackText(
+      "Sol de Janeiro / 5%返利 / 100人获得返利\nDavid Yurman / 5%返利 / 100人获得返利"
+    );
+    const { result } = applyKeywordTraffic(screened, [
+      { keyword: "sol de janeiro", searchVolume: 450000, cpc: 1.37, competition: null, lowTopBid: null, highTopBid: null },
+      { keyword: "david yurman", searchVolume: 550000, cpc: 0.55, competition: null, lowTopBid: null, highTopBid: null },
+    ]);
+    const by = (n: string) => result.merchants.find((x) => x.name === n)!;
+    expect(by("Sol de Janeiro").keywordVerdict).toBe("unknown");
+    expect(by("Sol de Janeiro").keywordNote).toContain("佣金未核实");
+    expect(by("David Yurman").keywordVerdict).toBe("unknown");
+    expect(by("David Yurman").keywordNote).toContain("佣金未核实");
+  });
+
+  it("e.l.f. cosmetics 品牌词无量：搜索量 0 → no-volume（换 elf cosmetics 重测待确认）", () => {
+    expect(
+      brandKeywordVerdict({ searchVolume: 0, cpc: null, breakevenCpc: 2.38 })
+    ).toBe("no-volume");
+  });
+
+  it("19 家深核结论不动：ROVE 仍短名单、SKIMS 仍排除（计档不受新库影响）", () => {
+    const r = screenCashbackText(
+      "ROVE Dash Cam / 8%返利 / 50人获得返利\nSKIMS / 最高2%返利 / 2万人获得返利"
+    );
+    expect(r.merchants.map((m) => m.verdict)).toEqual(["shortlist", "excluded"]);
+  });
+});
