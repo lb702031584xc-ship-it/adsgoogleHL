@@ -263,6 +263,10 @@ model Tenant {
   killRules             KillRule[]
   killRuleEvents        KillRuleEvent[]
   riskParams            RiskParam[]
+  /// AutoAds-style Google Ads Scripts 换链任务（additive）
+  urlSwapTasks          UrlSwapTask[]
+  urlSwapAuth           UrlSwapAuth?
+  urlSwapLogs           UrlSwapExecLog[]
 
   @@map("tenants")
 }
@@ -2995,4 +2999,86 @@ model RiskParam {
   @@unique([tenantId, network, operationType])
   @@index([tenantId])
   @@map("risk_params")
+}
+
+/// AutoAds-style 换链任务：按广告系列名轮换联盟链接，供 Google Ads Script 拉取 Tracking Template。
+model UrlSwapTask {
+  id                     String    @id @db.Uuid
+  tenantId               String    @map("tenant_id") @db.Uuid
+  network                String    @default("default")
+  campaignName           String    @map("campaign_name")
+  /// [{ url, remark }]
+  links                  Json
+  landingDomain          String    @map("landing_domain")
+  proxyType              String    @default("none") @map("proxy_type")
+  geoVerifyEnabled       Boolean   @default(false) @map("geo_verify_enabled")
+  proxyExtractUrl        String    @default("") @map("proxy_extract_url")
+  backupProxyExtractUrl  String    @default("") @map("backup_proxy_extract_url")
+  /// string[]
+  targetRegions          Json      @default("[]") @map("target_regions")
+  uaStrategy             String    @default("random") @map("ua_strategy")
+  uaPlatform             String    @default("desktop") @map("ua_platform")
+  /// string[]
+  referers               Json      @default("[]")
+  execIntervalMinutes    Int       @default(10) @map("exec_interval_minutes")
+  rotateIntervalMinutes  Int       @default(30) @map("rotate_interval_minutes")
+  rotationEnabled        Boolean   @default(true) @map("rotation_enabled")
+  currentLinkIndex       Int       @default(0) @map("current_link_index")
+  lastRotatedAt          DateTime? @map("last_rotated_at") @db.Timestamptz(3)
+  /// running | paused | error | completed
+  status                 String    @default("running")
+  linkChangeCount        Int       @default(0) @map("link_change_count")
+  lastExecAt             DateTime? @map("last_exec_at") @db.Timestamptz(3)
+  lastExecStatus         String?   @map("last_exec_status")
+  lastExecMessage        String?   @map("last_exec_message")
+  lastProxyLine          String?   @map("last_proxy_line")
+  activeTemplate         String?   @map("active_template")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  logs   UrlSwapExecLog[]
+
+  @@unique([tenantId, campaignName])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("url_swap_tasks")
+}
+
+/// Per-tenant auth code for Google Ads Script → gettemplate.
+model UrlSwapAuth {
+  id          String   @id @db.Uuid
+  tenantId    String   @unique @map("tenant_id") @db.Uuid
+  apiAuthCode String   @map("api_auth_code")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("url_swap_auth")
+}
+
+model UrlSwapExecLog {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  taskId       String   @map("task_id") @db.Uuid
+  campaignName String   @map("campaign_name")
+  linkUrl      String   @map("link_url")
+  linkRemark   String   @default("") @map("link_remark")
+  /// success | failed
+  status       String
+  proxyLine    String?  @map("proxy_line")
+  referer      String?
+  userAgent    String?  @map("user_agent")
+  finalDomain  String?  @map("final_domain")
+  durationMs   Int      @default(0) @map("duration_ms")
+  message      String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  task   UrlSwapTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([taskId, createdAt])
+  @@map("url_swap_logs")
 }

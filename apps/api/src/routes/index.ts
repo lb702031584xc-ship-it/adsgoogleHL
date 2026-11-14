@@ -78,6 +78,7 @@ import { registerExperimentRoutes } from "./experiments.js";
 import { registerBudgetRoutes } from "./budget.js";
 import { registerStatsRoutes } from "./stats.js";
 import { registerLinkSwapRoutes } from "./link-swap.js";
+import { registerUrlSwapRoutes } from "./url-swap.js";
 import { registerLaunchRoutes } from "./launch.js";
 import { registerCampaignToggleRoutes } from "./campaign-toggle.js";
 import { registerAdsAutoRoutes } from "./ads-auto.js";
@@ -255,6 +256,7 @@ export async function registerRoutes(
     await registerLanderIntelRoutes(app, { prisma: services.prisma });
     await registerStatsRoutes(app, { prisma: services.prisma });
     await registerLinkSwapRoutes(app, { prisma: services.prisma });
+    await registerUrlSwapRoutes(app, { prisma: services.prisma });
     await registerLaunchRoutes(app, { prisma: services.prisma });
     await registerCampaignToggleRoutes(app, { prisma: services.prisma });
     await registerAdsAutoRoutes(app, { prisma: services.prisma });

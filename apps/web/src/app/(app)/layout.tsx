@@ -281,6 +281,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               phase: ph.creative,
             },
             { href: "/cashback/rotations", label: ni.cashbackRotations, phase: ph.traffic },
+            { href: "/url-swap", label: ni.urlSwap, phase: ph.traffic },
             { href: "/ads/auto-create", label: ni.launchAds, phase: ph.traffic },
             { href: "/ads/rotation-script", label: ni.rotationScript, phase: ph.traffic },
             { href: "/ads/click-monitor", label: ni.clickMonitor, phase: ph.traffic },
@@ -386,10 +387,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
-      <aside className="flex flex-col border-r border-ink/10 bg-ink text-mist">
+      <aside className="flex flex-col border-r border-slate-800 bg-slate-950 text-slate-100">
         <div className="px-5 py-6">
-          <p className="font-display text-2xl tracking-tight">AdLinkLab</p>
-          <p className="mt-1 text-sm text-mist/70">
+          <p className="text-2xl font-semibold tracking-tight text-white">AdLinkLab</p>
+          <p className="mt-1 text-sm text-slate-400">
             {t.common.brand.phase("Phase 8.4.7")}
           </p>
         </div>
